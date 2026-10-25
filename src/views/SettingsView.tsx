@@ -1,5 +1,13 @@
 import React, { useState, useRef } from 'react';
-import { db, DEFAULT_SETTINGS, exportDatabaseBackup, importDatabaseBackup, seedDemoData } from '../db';
+import {
+  db,
+  DEFAULT_SETTINGS,
+  exportDatabaseBackup,
+  importDatabaseBackup,
+  seedDemoData,
+  purgeDemoData,
+  autoScanAndSyncData
+} from '../db';
 import type { StoreSettings } from '../types';
 import {
   Settings,
@@ -12,7 +20,9 @@ import {
   CheckCircle2,
   Database,
   Info,
-  Save
+  Save,
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 
 interface Props {
@@ -364,11 +374,11 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
           Mohit Kirana stores 100% of your records locally inside browser IndexedDB (Dexie.js). Your data is private, zero-latency, and never leaves your computer or phone. Take regular backups to protect your records.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           {/* Export Full Backup */}
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 flex flex-col justify-between space-y-3">
             <div>
-              <h4 className="font-bold text-slate-800 dark:text-white">Download Full Backup (JSON)</h4>
+              <h4 className="font-bold text-slate-800 dark:text-white">Download Backup (JSON)</h4>
               <p className="text-[11px] text-slate-500 mt-1">
                 Saves all products, customers, bills, udhar ledgers and audit records into a single safe JSON file.
               </p>
@@ -378,7 +388,27 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
               className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-kirana-700 hover:bg-kirana-800 text-white font-bold rounded-xl shadow-sm transition-all active:scale-98"
             >
               <Download className="w-4 h-4" />
-              <span>Export Complete JSON Backup</span>
+              <span>Export JSON Backup</span>
+            </button>
+          </div>
+
+          {/* Auto-Scan & Sync Data */}
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 flex flex-col justify-between space-y-3">
+            <div>
+              <h4 className="font-bold text-slate-800 dark:text-white">Auto-Scan & Verify Data</h4>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Scans all offline records, validates data integrity, and updates the persistent snapshot.
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                const res = await autoScanAndSyncData();
+                alert(res.message);
+              }}
+              className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl shadow-sm transition-all active:scale-98"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Scan & Verify Now</span>
             </button>
           </div>
 
@@ -402,21 +432,36 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
               className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-sm transition-all active:scale-98"
             >
               <Upload className="w-4 h-4" />
-              <span>Restore from Backup File</span>
+              <span>Restore from File</span>
             </button>
           </div>
         </div>
 
         {/* Demo Data & Danger Zone */}
         <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <button
-            type="button"
-            onClick={handleLoadSampleData}
-            className="flex items-center gap-1.5 text-kirana-700 dark:text-kirana-400 font-bold hover:underline"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Load Demo Sample Grocery Data</span>
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await purgeDemoData();
+                alert(res.message);
+                window.location.reload();
+              }}
+              className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-bold hover:underline"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Remove Fake & Demo Data</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLoadSampleData}
+              className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium hover:underline text-[11px]"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Load Sample Demo Data</span>
+            </button>
+          </div>
 
           <button
             type="button"

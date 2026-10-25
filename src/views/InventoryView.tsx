@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import type { Product, UnitType, StockMovement, StoreSettings } from '../types';
+import type { Product, UnitType, StoreSettings } from '../types';
 import { formatINR, formatDate } from '../utils/formatters';
 import { exportProductsCSV, parseProductsCSV } from '../utils/csv';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
+import { MASTER_GROCERY_CATALOG, type CatalogItem } from '../data/masterCatalog';
 import {
   Package,
   Plus,
@@ -12,17 +13,20 @@ import {
   Camera,
   Download,
   Upload,
-  AlertTriangle,
   History,
   Edit2,
   Archive,
   RotateCcw,
-  SlidersHorizontal,
   X,
   Check,
   Calendar,
   Layers,
-  ArrowUpDown
+  Sparkles,
+  BookOpen,
+  CheckSquare,
+  Square,
+  AlertCircle,
+  ChevronRight
 } from 'lucide-react';
 
 interface Props {
@@ -30,7 +34,7 @@ interface Props {
   openNewProductModalOnMount?: boolean;
 }
 
-export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOnMount }) => {
+export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) => {
   const products = useLiveQuery(() => db.products.toArray()) || [];
   const stockMovements = useLiveQuery(() => db.stockMovements.reverse().limit(50).toArray()) || [];
 
@@ -38,7 +42,10 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'low' | 'out' | 'expiring' | 'archived'>('all');
+  
+  // Scanner state
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState<'inventorySearch' | 'formBarcode'>('inventorySearch');
 
   // Modals state
   const [isAddEditOpen, setIsAddEditOpen] = useState(openNewProductModalOnMount || false);
@@ -46,6 +53,12 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
   const [isAdjustStockOpen, setIsAdjustStockOpen] = useState(false);
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  
+  // Master Catalog Modal State
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState('All');
+  const [selectedCatalogItems, setSelectedCatalogItems] = useState<Set<string>>(new Set());
 
   // Form state for Add/Edit Product
   const [formName, setFormName] = useState('');
@@ -60,6 +73,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
   const [formMinThreshold, setFormMinThreshold] = useState<string>('5');
   const [formSupplierName, setFormSupplierName] = useState('');
   const [formExpiryDate, setFormExpiryDate] = useState('');
+  const [autoFillNotice, setAutoFillNotice] = useState<string | null>(null);
 
   // Stock Adjustment form state
   const [adjustType, setAdjustType] = useState<'manual_in' | 'manual_out' | 'damage'>('manual_in');
@@ -68,6 +82,23 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
 
   // CSV Import file input ref
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Auto-fill from catalog item
+  const applyCatalogItemToForm = (item: CatalogItem) => {
+    setFormName(item.name);
+    setFormCategory(item.category);
+    setFormBrand(item.brand);
+    setFormUnit(item.unit);
+    setFormBarcode(item.barcode);
+    setFormPurchasePrice(item.typicalPurchasePrice.toString());
+    setFormSellingPrice(item.typicalSellingPrice.toString());
+    setFormSku(`SKU-${item.barcode.slice(-6)}`);
+    if (!formStockQuantity || formStockQuantity === '0') {
+      setFormStockQuantity('15');
+    }
+    setAutoFillNotice(`Auto-filled details for "${item.name}" from Master Catalog!`);
+    setTimeout(() => setAutoFillNotice(null), 4000);
+  };
 
   // Pre-fill edit modal
   const openEditModal = (p: Product) => {
@@ -84,6 +115,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     setFormMinThreshold(p.minStockThreshold.toString());
     setFormSupplierName(p.supplierName || '');
     setFormExpiryDate(p.expiryDate || '');
+    setAutoFillNotice(null);
     setIsAddEditOpen(true);
   };
 
@@ -101,7 +133,19 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     setFormMinThreshold('5');
     setFormSupplierName('');
     setFormExpiryDate('');
+    setAutoFillNotice(null);
     setIsAddEditOpen(true);
+  };
+
+  // Check barcode against catalog during typing
+  const handleBarcodeChange = (code: string) => {
+    setFormBarcode(code);
+    if (!code.trim()) return;
+
+    const matchedCatalog = MASTER_GROCERY_CATALOG.find((c) => c.barcode === code.trim());
+    if (matchedCatalog && !formName) {
+      applyCatalogItemToForm(matchedCatalog);
+    }
   };
 
   // Save product (Add or Update)
@@ -169,15 +213,17 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
         updatedAt: now,
       };
 
-      const id = await db.products.add(newProduct as Product);
+      const newId = await db.products.add(newProduct as Product);
+
+      // Record initial stock movement
       if (stockQty > 0) {
         await db.stockMovements.add({
-          productId: id,
-          productName: formName.trim(),
+          productId: newId,
+          productName: newProduct.name,
           type: 'manual_in',
           quantityChange: stockQty,
           quantityAfter: stockQty,
-          reason: 'Opening stock for newly added product',
+          reason: 'Initial added stock',
           date: now,
         });
       }
@@ -186,44 +232,111 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     setIsAddEditOpen(false);
   };
 
-  // Toggle archive
-  const handleToggleArchive = async (product: Product) => {
-    if (!product.id) return;
-    const newStatus = !product.isArchived;
-    await db.products.update(product.id, {
-      isArchived: newStatus,
-      updatedAt: new Date().toISOString(),
-    });
+  // Add multiple items from Master Catalog with 1-click
+  const handleAddSelectedCatalogItems = async () => {
+    if (selectedCatalogItems.size === 0) return;
+
+    const itemsToAdd = MASTER_GROCERY_CATALOG.filter((item) =>
+      selectedCatalogItems.has(item.barcode)
+    );
+
+    const now = new Date().toISOString();
+    let addedCount = 0;
+
+    for (const item of itemsToAdd) {
+      // Check if already in products
+      const existing = products.find((p) => p.barcode === item.barcode);
+      if (!existing) {
+        const newProduct: Omit<Product, 'id'> = {
+          name: item.name,
+          category: item.category,
+          brand: item.brand,
+          sku: `SKU-${item.barcode.slice(-6)}`,
+          barcode: item.barcode,
+          unit: item.unit,
+          purchasePrice: item.typicalPurchasePrice,
+          sellingPrice: item.typicalSellingPrice,
+          stockQuantity: 15, // standard default initial inventory
+          minStockThreshold: 5,
+          supplierName: 'Main Distributor',
+          expiryDate: '',
+          isArchived: false,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const id = await db.products.add(newProduct as Product);
+        await db.stockMovements.add({
+          productId: id,
+          productName: item.name,
+          type: 'manual_in',
+          quantityChange: 15,
+          quantityAfter: 15,
+          reason: 'Added from Master Grocery Catalog',
+          date: now,
+        });
+        addedCount++;
+      }
+    }
+
+    setSelectedCatalogItems(new Set());
+    setIsCatalogModalOpen(false);
+    alert(`Successfully added ${addedCount} products to your store inventory!`);
   };
 
-  // Save stock adjustment
-  const handleSaveStockAdjustment = async (e: React.FormEvent) => {
+  // Toggle archive product
+  const toggleArchiveProduct = async (p: Product) => {
+    if (!p.id) return;
+    const confirm = window.confirm(
+      p.isArchived
+        ? `Restore "${p.name}" to active inventory?`
+        : `Archive "${p.name}"? It will not appear in POS billing.`
+    );
+    if (confirm) {
+      await db.products.update(p.id, {
+        isArchived: !p.isArchived,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  };
+
+  // Quick Stock Adjustment
+  const openStockAdjustModal = (p: Product) => {
+    setAdjustingProduct(p);
+    setAdjustType('manual_in');
+    setAdjustQty('');
+    setAdjustReason('');
+    setIsAdjustStockOpen(true);
+  };
+
+  const handleStockAdjustSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!adjustingProduct?.id) return;
+    if (!adjustingProduct || !adjustingProduct.id) return;
 
     const qty = parseFloat(adjustQty);
     if (isNaN(qty) || qty <= 0) {
-      alert('Please enter a valid positive quantity.');
+      alert('Please enter a valid quantity greater than zero');
       return;
     }
 
-    const currentStock = adjustingProduct.stockQuantity;
-    let newStock = currentStock;
+    const current = adjustingProduct.stockQuantity;
+    let newStock = current;
     let change = 0;
 
     if (adjustType === 'manual_in') {
-      newStock = currentStock + qty;
+      newStock = current + qty;
       change = qty;
     } else {
-      if (qty > currentStock) {
-        alert(`Cannot reduce more than current stock (${currentStock} ${adjustingProduct.unit}).`);
+      if (qty > current) {
+        alert(`Cannot reduce more than current stock (${current} ${adjustingProduct.unit})`);
         return;
       }
-      newStock = currentStock - qty;
+      newStock = current - qty;
       change = -qty;
     }
 
     const now = new Date().toISOString();
+
     await db.products.update(adjustingProduct.id, {
       stockQuantity: newStock,
       updatedAt: now,
@@ -235,7 +348,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
       type: adjustType,
       quantityChange: change,
       quantityAfter: newStock,
-      reason: adjustReason.trim() || `Manual ${adjustType.replace('_', ' ')}`,
+      reason: adjustReason.trim() || `Manual stock ${adjustType}`,
       date: now,
     });
 
@@ -268,9 +381,43 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     });
   };
 
-  // Barcode scanned from camera in inventory
+  // Smart Barcode scanned handler from camera
   const handleBarcodeScanned = (code: string) => {
-    setSearchQuery(code);
+    if (scannerTarget === 'formBarcode') {
+      // Scanned into Add/Edit modal form
+      handleBarcodeChange(code);
+      return;
+    }
+
+    // Scanned on the main inventory screen
+    const existing = products.find(
+      (p) => p.barcode === code || p.sku.toLowerCase() === code.toLowerCase()
+    );
+
+    if (existing) {
+      setSearchQuery(code);
+      alert(`Found existing item: "${existing.name}" (In stock: ${existing.stockQuantity} ${existing.unit})`);
+    } else {
+      // Check if found in Master Catalog
+      const matchedCatalog = MASTER_GROCERY_CATALOG.find((c) => c.barcode === code);
+      if (matchedCatalog) {
+        const confirmAdd = window.confirm(
+          `Scanned code "${code}" matches "${matchedCatalog.name}" in Master Catalog.\n\nAdd to your store inventory?`
+        );
+        if (confirmAdd) {
+          openNewModal();
+          applyCatalogItemToForm(matchedCatalog);
+        }
+      } else {
+        const confirmNew = window.confirm(
+          `New Barcode scanned: "${code}".\nAdd as a new product in your inventory?`
+        );
+        if (confirmNew) {
+          openNewModal();
+          setFormBarcode(code);
+        }
+      }
+    }
   };
 
   // Categories list
@@ -281,6 +428,27 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     });
     return ['All', ...Array.from(set)];
   }, [products]);
+
+  // Master Catalog categories
+  const catalogCategories = useMemo(() => {
+    const set = new Set<string>();
+    MASTER_GROCERY_CATALOG.forEach((item) => set.add(item.category));
+    return ['All', ...Array.from(set)];
+  }, []);
+
+  // Filtered master catalog items
+  const filteredCatalogItems = useMemo(() => {
+    const q = catalogSearch.toLowerCase().trim();
+    return MASTER_GROCERY_CATALOG.filter((item) => {
+      const matchCat = catalogCategory === 'All' || item.category === catalogCategory;
+      const matchQ =
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        item.brand.toLowerCase().includes(q) ||
+        item.barcode.includes(q);
+      return matchCat && matchQ;
+    });
+  }, [catalogSearch, catalogCategory]);
 
   // Inventory valuation calculations
   const valuation = useMemo(() => {
@@ -308,15 +476,17 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
   // Filtered products list
   const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    const today = new Date();
+    const now = new Date();
     const thirtyDaysAhead = new Date();
-    thirtyDaysAhead.setDate(today.getDate() + 30);
+    thirtyDaysAhead.setDate(now.getDate() + 30);
 
     return products.filter((p) => {
       // Category filter
-      if (categoryFilter !== 'All' && p.category !== categoryFilter) return false;
+      if (categoryFilter !== 'All' && p.category !== categoryFilter) {
+        return false;
+      }
 
-      // Status filter
+      // Stock status filter
       if (stockStatusFilter === 'archived') {
         if (!p.isArchived) return false;
       } else {
@@ -348,7 +518,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
   }, [products, searchQuery, categoryFilter, stockStatusFilter]);
 
   return (
-    <div className="space-y-6 pb-20 lg:pb-8">
+    <div className="space-y-6 pb-28 lg:pb-8">
       {/* Header and Action Buttons */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -357,18 +527,36 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
             Inventory & Stock Management
           </h2>
           <p className="text-xs text-slate-500">
-            Track grocery products, categories, purchase prices, stock adjustments and expiry dates
+            Easily select from 60+ Indian grocery catalog items, scan barcodes, and track stock
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Stock History Button */}
+          {/* MASTER CATALOG QUICK ADD BUTTON */}
+          <button
+            onClick={() => setIsCatalogModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-kirana-700 to-emerald-600 hover:from-kirana-800 hover:to-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-kirana-700/20 transition-all active:scale-95"
+          >
+            <Sparkles className="w-4 h-4 text-yellow-300" />
+            <span>Master Catalog (60+)</span>
+          </button>
+
+          {/* Add Product Button */}
+          <button
+            onClick={openNewModal}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-black dark:bg-slate-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Add Product</span>
+          </button>
+
+          {/* Audit Log Button */}
           <button
             onClick={() => setIsHistoryOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all"
           >
             <History className="w-4 h-4 text-slate-500" />
-            <span>Audit Log</span>
+            <span className="hidden sm:inline">Audit Log</span>
           </button>
 
           {/* Export CSV Button */}
@@ -378,7 +566,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
             title="Export products to CSV"
           >
             <Download className="w-4 h-4 text-slate-500" />
-            <span>Export CSV</span>
+            <span className="hidden sm:inline">Export</span>
           </button>
 
           {/* Import CSV Hidden Input & Button */}
@@ -395,16 +583,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
             title="Import products from CSV"
           >
             <Upload className="w-4 h-4 text-slate-500" />
-            <span>Import CSV</span>
-          </button>
-
-          {/* Add Product Button */}
-          <button
-            onClick={openNewModal}
-            className="flex items-center gap-1.5 px-4 py-2 bg-kirana-700 hover:bg-kirana-800 text-white rounded-xl text-xs font-bold shadow-md shadow-kirana-700/20 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Product</span>
+            <span className="hidden sm:inline">Import</span>
           </button>
         </div>
       </div>
@@ -412,28 +591,28 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
       {/* Inventory Valuation Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Active Items</span>
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Items in Store</span>
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
             {valuation.activeCount} <span className="text-xs font-normal text-slate-400">SKUs</span>
           </p>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Stock Cost Value</span>
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Stock Cost</span>
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
             {formatINR(valuation.totalCostValue)}
           </p>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Stock Retail Value (MRP)</span>
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Stock Retail Value</span>
           <p className="text-xl font-black text-kirana-700 dark:text-kirana-400 mt-1">
             {formatINR(valuation.totalRetailValue)}
           </p>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Expected Gross Profit</span>
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Estimated Gross Margin</span>
           <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
             {formatINR(valuation.estimatedMargin)}{' '}
             <span className="text-xs font-bold text-emerald-700">
@@ -451,10 +630,10 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
             <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
             <input
               type="text"
-              placeholder="Search products by name, brand, SKU or barcode..."
+              placeholder="Search store items by name, barcode, SKU or brand..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-kirana-500 text-slate-800 dark:text-white"
+              className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-kirana-500 text-slate-900 dark:text-white"
             />
             {searchQuery && (
               <button
@@ -466,191 +645,334 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
             )}
           </div>
 
-          {/* Barcode scanner button */}
+          {/* Barcode Scanner Button */}
           <button
-            onClick={() => setIsScannerOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-kirana-50 dark:bg-kirana-950/40 text-kirana-700 dark:text-kirana-300 border border-kirana-200 dark:border-kirana-800/80 rounded-xl text-xs font-bold shrink-0 hover:bg-kirana-100 transition-colors"
+            onClick={() => {
+              setScannerTarget('inventorySearch');
+              setIsScannerOpen(true);
+            }}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-kirana-700 hover:bg-kirana-800 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm active:scale-95"
+            title="Scan product barcode with camera"
           >
             <Camera className="w-4 h-4" />
-            <span>Scan to Find</span>
+            <span>Scan Product Barcode</span>
           </button>
-
-          {/* Category Filter */}
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300"
-          >
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                Category: {c}
-              </option>
-            ))}
-          </select>
         </div>
 
-        {/* Quick Status Tabs */}
-        <div className="flex flex-wrap gap-1.5 text-xs font-semibold pt-1 border-t border-slate-100 dark:border-slate-700">
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-700 text-xs">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+            Status:
+          </span>
           {[
-            { id: 'all', label: 'All Products' },
+            { id: 'all', label: 'All Items' },
             { id: 'low', label: 'Low Stock' },
             { id: 'out', label: 'Out of Stock' },
-            { id: 'expiring', label: 'Expiring Soon (30d)' },
+            { id: 'expiring', label: 'Expiring in 30d' },
             { id: 'archived', label: 'Archived' },
-          ].map((tab) => (
+          ].map((st) => (
             <button
-              key={tab.id}
-              onClick={() => setStockStatusFilter(tab.id as any)}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                stockStatusFilter === tab.id
-                  ? 'bg-kirana-700 text-white shadow-sm'
+              key={st.id}
+              onClick={() => setStockStatusFilter(st.id as any)}
+              className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                stockStatusFilter === st.id
+                  ? 'bg-kirana-700 text-white shadow-sm font-bold'
                   : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
               }`}
             >
-              {tab.label}
+              {st.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Products Table */}
+      {/* Products Table / Mobile List */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          {filteredProducts.length === 0 ? (
-            <div className="py-16 text-center text-slate-400 text-xs">
-              No products found matching the criteria.
-            </div>
-          ) : (
+        {filteredProducts.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-xs space-y-3">
+            <Package className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
+            <p className="font-semibold text-slate-600 dark:text-slate-400 text-sm">
+              No products found in store inventory
+            </p>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+              Get started instantly by selecting from our pre-built library of 60+ common Indian grocery items!
+            </p>
+            <button
+              onClick={() => setIsCatalogModalOpen(true)}
+              className="px-4 py-2 bg-kirana-700 text-white rounded-xl text-xs font-bold shadow-md hover:bg-kirana-800 transition-all inline-flex items-center gap-1.5"
+            >
+              <Sparkles className="w-4 h-4 text-yellow-300" />
+              <span>Select from Master Catalog</span>
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-700">
+              <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase tracking-wider">
                 <tr>
-                  <th className="py-3 px-4">Item & Brand</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4">Barcode / SKU</th>
-                  <th className="py-3 px-4 text-right">Cost Price</th>
-                  <th className="py-3 px-4 text-right">Selling Price</th>
-                  <th className="py-3 px-4 text-center">Current Stock</th>
-                  <th className="py-3 px-4">Expiry Date</th>
+                  <th className="py-3 px-4">Item Details</th>
+                  <th className="py-3 px-3">Category</th>
+                  <th className="py-3 px-3 text-right">Purchase Price</th>
+                  <th className="py-3 px-3 text-right">Selling Price</th>
+                  <th className="py-3 px-3 text-center">Stock Available</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {filteredProducts.map((product) => {
-                  const isOutOfStock = product.stockQuantity <= 0;
-                  const isLowStock =
-                    product.stockQuantity > 0 &&
-                    product.stockQuantity <= product.minStockThreshold;
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                {filteredProducts.map((p) => {
+                  const isOut = p.stockQuantity <= 0;
+                  const isLow = p.stockQuantity > 0 && p.stockQuantity <= p.minStockThreshold;
 
                   return (
                     <tr
-                      key={product.id}
-                      className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors ${
-                        product.isArchived ? 'opacity-60 bg-slate-50 dark:bg-slate-900/40' : ''
+                      key={p.id}
+                      className={`hover:bg-slate-50/80 dark:hover:bg-slate-750 transition-colors ${
+                        p.isArchived ? 'opacity-60 bg-slate-50/50 dark:bg-slate-900/30' : ''
                       }`}
                     >
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900 dark:text-white">
-                          {product.name}
+                        <div className="font-bold text-slate-900 dark:text-white">{p.name}</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
+                          {p.brand && <span className="font-sans font-medium text-slate-500">{p.brand}</span>}
+                          {p.barcode && <span>• Barcode: {p.barcode}</span>}
                         </div>
-                        <div className="text-[10px] text-slate-400">
-                          {product.brand ? `Brand: ${product.brand}` : 'Unbranded'}
-                        </div>
                       </td>
 
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-[10px] font-medium">
-                          {product.category}
-                        </span>
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
+                        {p.category}
                       </td>
 
-                      <td className="py-3 px-4 font-mono text-slate-500 dark:text-slate-400">
-                        {product.barcode ? (
-                          <div>{product.barcode}</div>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">No barcode</span>
-                        )}
-                        <span className="text-[10px] text-slate-400 block">{product.sku}</span>
+                      <td className="py-3 px-3 text-right font-mono text-slate-600 dark:text-slate-400">
+                        {formatINR(p.purchasePrice)}
                       </td>
 
-                      <td className="py-3 px-4 text-right text-slate-600 dark:text-slate-300 font-medium">
-                        {formatINR(product.purchasePrice)}
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-kirana-800 dark:text-kirana-400">
+                        {formatINR(p.sellingPrice)}
+                        <span className="text-[10px] font-normal text-slate-400">/{p.unit}</span>
                       </td>
 
-                      <td className="py-3 px-4 text-right font-black text-slate-900 dark:text-white">
-                        {formatINR(product.sellingPrice)}
-                      </td>
-
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3 px-3 text-center">
                         <div className="inline-flex items-center gap-1.5">
                           <span
-                            className={`px-2.5 py-0.5 rounded-full font-black text-xs ${
-                              isOutOfStock
-                                ? 'bg-red-100 text-red-800'
-                                : isLowStock
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-emerald-100 text-emerald-800'
+                            className={`font-black px-2 py-0.5 rounded-full text-[11px] ${
+                              isOut
+                                ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+                                : isLow
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                             }`}
                           >
-                            {product.stockQuantity} {product.unit}
+                            {p.stockQuantity} {p.unit}
                           </span>
-                          <button
-                            onClick={() => {
-                              setAdjustingProduct(product);
-                              setIsAdjustStockOpen(true);
-                            }}
-                            title="Adjust Stock"
-                            className="p-1 text-slate-400 hover:text-kirana-700 hover:bg-slate-100 rounded"
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                          </button>
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                        {product.expiryDate ? formatDate(product.expiryDate) : '—'}
-                      </td>
-
-                      <td className="py-3 px-4 text-right space-x-1 whitespace-nowrap">
-                        <button
-                          onClick={() => openEditModal(product)}
-                          className="p-1.5 text-slate-600 hover:text-kirana-700 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="Edit Product"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleToggleArchive(product)}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            product.isArchived
-                              ? 'text-emerald-600 hover:bg-emerald-50'
-                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
-                          title={product.isArchived ? 'Restore Product' : 'Archive Product'}
-                        >
-                          {product.isArchived ? (
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          ) : (
-                            <Archive className="w-3.5 h-3.5" />
-                          )}
-                        </button>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => openStockAdjustModal(p)}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold"
+                            title="Adjust quantity"
+                          >
+                            Stock ±
+                          </button>
+                          <button
+                            onClick={() => openEditModal(p)}
+                            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300"
+                            title="Edit Product"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => toggleArchiveProduct(p)}
+                            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-red-600"
+                            title={p.isArchived ? 'Restore Product' : 'Archive Product'}
+                          >
+                            {p.isArchived ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Add / Edit Product Modal */}
+      {/* MASTER GROCERY CATALOG MODAL (Fast 1-click product addition) */}
+      {isCatalogModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-kirana-900 to-kirana-800 text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-kirana-700 rounded-xl">
+                  <Sparkles className="w-5 h-5 text-yellow-300" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base">
+                    Master Indian Kirana Catalog
+                  </h3>
+                  <p className="text-xs text-kirana-200">
+                    Select popular FMCG & grocery items to add to your store in seconds
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCatalogModalOpen(false)}
+                className="p-1.5 text-kirana-200 hover:text-white rounded-lg hover:bg-white/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search and Category Filter in Catalog */}
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 space-y-3 bg-slate-50 dark:bg-slate-800/40">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search catalog by product name, brand (e.g. Parle, Tata, Amul, Fortune)..."
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-kirana-500"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Category Pills */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs scrollbar-none">
+                {catalogCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setCatalogCategory(cat)}
+                    className={`px-3 py-1.5 rounded-lg whitespace-nowrap font-medium transition-all ${
+                      catalogCategory === cat
+                        ? 'bg-kirana-700 text-white shadow-sm font-bold'
+                        : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Catalog Items Grid */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {filteredCatalogItems.map((item) => {
+                  const isAlreadyInStore = products.some((p) => p.barcode === item.barcode);
+                  const isChecked = selectedCatalogItems.has(item.barcode);
+
+                  return (
+                    <div
+                      key={item.barcode}
+                      className={`p-3 rounded-xl border transition-all flex flex-col justify-between ${
+                        isAlreadyInStore
+                          ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 opacity-70'
+                          : isChecked
+                          ? 'bg-kirana-50 dark:bg-kirana-950/40 border-kirana-500 shadow-sm'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-kirana-400'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              {item.brand} • {item.category}
+                            </span>
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-2 mt-0.5">
+                              {item.name}
+                            </h4>
+                          </div>
+
+                          {!isAlreadyInStore && (
+                            <button
+                              onClick={() => {
+                                const next = new Set(selectedCatalogItems);
+                                if (isChecked) next.delete(item.barcode);
+                                else next.add(item.barcode);
+                                setSelectedCatalogItems(next);
+                              }}
+                              className="text-kirana-700 dark:text-kirana-400 p-1 shrink-0"
+                            >
+                              {isChecked ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-300" />}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-2">
+                          <span>MRP: <strong className="text-slate-800 dark:text-white">{formatINR(item.typicalSellingPrice)}</strong></span>
+                          <span>Cost: ~{formatINR(item.typicalPurchasePrice)}</span>
+                          <span className="font-mono text-[10px] text-slate-400">{item.barcode}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between">
+                        {isAlreadyInStore ? (
+                          <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" /> Already in Store
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setIsCatalogModalOpen(false);
+                              openNewModal();
+                              applyCatalogItemToForm(item);
+                            }}
+                            className="px-3 py-1 bg-kirana-700 hover:bg-kirana-800 text-white rounded-lg text-xs font-bold shadow-sm flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Customize & Add
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Catalog Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+              <span className="text-xs text-slate-500 font-medium">
+                {selectedCatalogItems.size} items selected
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsCatalogModalOpen(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-400"
+                >
+                  Close
+                </button>
+                {selectedCatalogItems.size > 0 && (
+                  <button
+                    onClick={handleAddSelectedCatalogItems}
+                    className="px-4 py-2 bg-kirana-700 hover:bg-kirana-800 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add {selectedCatalogItems.size} Selected Items to Store</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD / EDIT PRODUCT MODAL */}
       {isAddEditOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-xl w-full my-8 overflow-hidden border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700 bg-kirana-50 dark:bg-kirana-950/40">
-              <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Package className="w-5 h-5 text-kirana-700" />
-                {editingProduct ? 'Edit Grocery Product' : 'Add New Grocery Product'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-xl w-full max-h-[92vh] overflow-y-auto border border-slate-200 dark:border-slate-800">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 sticky top-0 z-10">
+              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                {editingProduct ? 'Edit Store Product' : 'Add Product to Inventory'}
               </h3>
               <button
                 onClick={() => setIsAddEditOpen(false)}
@@ -660,7 +982,15 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="p-5 overflow-y-auto space-y-4 text-xs">
+            {autoFillNotice && (
+              <div className="m-4 mb-0 p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{autoFillNotice}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveProduct} className="p-5 space-y-4 text-xs">
+              {/* Product Name */}
               <div className="space-y-1">
                 <label className="font-semibold text-slate-700 dark:text-slate-300">
                   Product Name *
@@ -668,35 +998,70 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Aashirvaad Shudh Chakki Atta"
+                  placeholder="e.g. Aashirvaad Shudh Chakki Atta (10kg)"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                  autoFocus
                 />
               </div>
 
+              {/* Barcode with Direct Camera Scanner Button */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Product Barcode / QR Code
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScannerTarget('formBarcode');
+                      setIsScannerOpen(true);
+                    }}
+                    className="text-[11px] text-kirana-700 dark:text-kirana-400 font-bold flex items-center gap-1 hover:underline"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Scan Barcode Camera</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Scan or enter barcode (Auto-detects from catalog)"
+                    value={formBarcode}
+                    onChange={(e) => handleBarcodeChange(e.target.value)}
+                    className="w-full pl-3 pr-10 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-mono text-slate-900 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScannerTarget('formBarcode');
+                      setIsScannerOpen(true);
+                    }}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-kirana-600"
+                    title="Scan with Camera"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Category & Brand */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">Category</label>
                   <input
                     type="text"
-                    list="category-suggestions"
                     placeholder="e.g. Atta & Flours"
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    list="category-suggestions"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   />
                   <datalist id="category-suggestions">
-                    <option value="Atta & Flours" />
-                    <option value="Edible Oils & Ghee" />
-                    <option value="Pulses & Dals" />
-                    <option value="Grains & Sugar" />
-                    <option value="Spices & Seasonings" />
-                    <option value="Snacks & Biscuits" />
-                    <option value="Dairy & Bakery" />
-                    <option value="Cleaning & Household" />
-                    <option value="Personal Care" />
-                    <option value="Beverages & Tea" />
+                    {catalogCategories.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
                   </datalist>
                 </div>
 
@@ -704,21 +1069,22 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                   <label className="font-semibold text-slate-700 dark:text-slate-300">Brand</label>
                   <input
                     type="text"
-                    placeholder="e.g. Aashirvaad, Fortune, Amul"
+                    placeholder="e.g. Aashirvaad, Tata, Amul"
                     value={formBrand}
                     onChange={(e) => setFormBrand(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
 
+              {/* Unit, Purchase Price, Selling Price */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">Unit Type</label>
                   <select
                     value={formUnit}
                     onChange={(e) => setFormUnit(e.target.value as UnitType)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
                   >
                     <option value="packet">packet</option>
                     <option value="kg">kg</option>
@@ -726,28 +1092,26 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                     <option value="litre">litre</option>
                     <option value="ml">ml</option>
                     <option value="piece">piece</option>
-                    <option value="dozen">dozen</option>
+                    <option value="box">box</option>
+                    <option value="bottle">bottle</option>
+                    <option value="carton">carton</option>
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">
-                    Purchase Price (₹)
-                  </label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">Cost Price (₹)</label>
                   <input
                     type="number"
                     step="any"
                     placeholder="e.g. 380"
                     value={formPurchasePrice}
                     onChange={(e) => setFormPurchasePrice(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">
-                    Selling Price (₹) *
-                  </label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">Selling Price (₹) *</label>
                   <input
                     type="number"
                     step="any"
@@ -755,15 +1119,16 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                     placeholder="e.g. 425"
                     value={formSellingPrice}
                     onChange={(e) => setFormSellingPrice(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold"
                   />
                 </div>
               </div>
 
+              {/* Initial Stock Quantity & Low Stock Threshold */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
-                    Current Stock Quantity
+                    Stock Quantity *
                   </label>
                   <input
                     type="number"
@@ -771,74 +1136,52 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                     required
                     value={formStockQuantity}
                     onChange={(e) => setFormStockQuantity(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
                   />
                 </div>
 
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
-                    Low Stock Threshold
+                    Low Stock Alert At
                   </label>
                   <input
                     type="number"
                     value={formMinThreshold}
                     onChange={(e) => setFormMinThreshold(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
 
+              {/* Supplier & Expiry */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">Barcode</label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">Supplier / Depot</label>
                   <input
                     type="text"
-                    placeholder="Scan or enter barcode"
-                    value={formBarcode}
-                    onChange={(e) => setFormBarcode(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">SKU Code</label>
-                  <input
-                    type="text"
-                    value={formSku}
-                    onChange={(e) => setFormSku(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">Supplier Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Delhi Grain Traders"
+                    placeholder="e.g. Local FMCG Agency"
                     value={formSupplierName}
                     onChange={(e) => setFormSupplierName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">Expiry Date</label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">Expiry Date (Optional)</label>
                   <input
                     type="date"
                     value={formExpiryDate}
                     onChange={(e) => setFormExpiryDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsAddEditOpen(false)}
-                  className="px-4 py-2 text-slate-600 font-medium"
+                  className="px-4 py-2 text-slate-600 dark:text-slate-400 font-medium"
                 >
                   Cancel
                 </button>
@@ -846,7 +1189,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                   type="submit"
                   className="px-5 py-2 bg-kirana-700 hover:bg-kirana-800 text-white font-bold rounded-xl shadow-md"
                 >
-                  {editingProduct ? 'Update Product' : 'Save Product'}
+                  {editingProduct ? 'Update Product' : 'Save Product to Store'}
                 </button>
               </div>
             </form>
@@ -858,50 +1201,76 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
       {isAdjustStockOpen && adjustingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-5 border border-slate-200 dark:border-slate-700 space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
-                  Adjust Stock: {adjustingProduct.name}
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Current Stock: <strong>{adjustingProduct.stockQuantity} {adjustingProduct.unit}</strong>
-                </p>
-              </div>
+            <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-700">
+              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                Adjust Stock: {adjustingProduct.name}
+              </h3>
               <button
                 onClick={() => setIsAdjustStockOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveStockAdjustment} className="space-y-3">
-              <div className="space-y-1">
-                <label className="font-semibold text-slate-700 dark:text-slate-300">Adjustment Type</label>
-                <select
-                  value={adjustType}
-                  onChange={(e) => setAdjustType(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900"
-                >
-                  <option value="manual_in">Stock Inward (Add +)</option>
-                  <option value="manual_out">Stock Outward (Subtract -)</option>
-                  <option value="damage">Damage / Expired / Shrinkage (Subtract -)</option>
-                </select>
+            <form onSubmit={handleStockAdjustSubmit} className="space-y-3">
+              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between">
+                <span>Current Recorded Stock:</span>
+                <span className="font-extrabold text-kirana-800 dark:text-kirana-400">
+                  {adjustingProduct.stockQuantity} {adjustingProduct.unit}
+                </span>
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-700 dark:text-slate-300">
-                  Quantity ({adjustingProduct.unit}) *
-                </label>
+                <label className="font-semibold text-slate-700 dark:text-slate-300">Adjustment Action</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('manual_in')}
+                    className={`py-2 rounded-xl font-bold border transition-all ${
+                      adjustType === 'manual_in'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300'
+                    }`}
+                  >
+                    + Add Stock
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('manual_out')}
+                    className={`py-2 rounded-xl font-bold border transition-all ${
+                      adjustType === 'manual_out'
+                        ? 'bg-amber-600 text-white border-amber-600'
+                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300'
+                    }`}
+                  >
+                    - Reduce Stock
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType('damage')}
+                    className={`py-2 rounded-xl font-bold border transition-all ${
+                      adjustType === 'damage'
+                        ? 'bg-red-600 text-white border-red-600'
+                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300'
+                    }`}
+                  >
+                    Damage / Lost
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 dark:text-slate-300">Quantity to Adjust ({adjustingProduct.unit}) *</label>
                 <input
                   type="number"
                   step="any"
-                  min="0.1"
                   required
                   placeholder="e.g. 5"
                   value={adjustQty}
                   onChange={(e) => setAdjustQty(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-bold"
+                  autoFocus
                 />
               </div>
 
@@ -909,7 +1278,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                 <label className="font-semibold text-slate-700 dark:text-slate-300">Reason / Reference</label>
                 <input
                   type="text"
-                  placeholder="e.g. Physical inventory count correction"
+                  placeholder="e.g. Physical count reconciliation, extra pack arrived"
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900"
@@ -920,15 +1289,15 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                 <button
                   type="button"
                   onClick={() => setIsAdjustStockOpen(false)}
-                  className="px-4 py-2 text-slate-600 font-medium"
+                  className="px-3 py-1.5 text-slate-600 font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-kirana-700 text-white font-bold rounded-xl shadow-md"
+                  className="px-4 py-2 bg-kirana-700 text-white font-bold rounded-xl shadow-md"
                 >
-                  Confirm Adjustment
+                  Apply Stock Change
                 </button>
               </div>
             </form>
@@ -936,58 +1305,60 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
         </div>
       )}
 
-      {/* Stock Movement Audit Log Modal */}
+      {/* Stock History Audit Log Modal */}
       {isHistoryOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full my-8 border border-slate-200 dark:border-slate-700 flex flex-col max-h-[85vh]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700">
-              <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <History className="w-5 h-5 text-kirana-700" />
-                Stock Movement Audit Trail (Last 50 changes)
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 text-xs">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-kirana-600" />
+                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                  Stock Movement Audit Log (Recent 50)
+                </h3>
+              </div>
               <button
                 onClick={() => setIsHistoryOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 font-semibold border-b border-slate-100">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800/50 border-b text-[10px] uppercase font-bold text-slate-400">
                   <tr>
-                    <th className="py-2.5 px-3">Date</th>
-                    <th className="py-2.5 px-3">Product</th>
-                    <th className="py-2.5 px-3">Event Type</th>
-                    <th className="py-2.5 px-3 text-right">Change</th>
-                    <th className="py-2.5 px-3 text-right">Balance</th>
-                    <th className="py-2.5 px-3">Notes</th>
+                    <th className="py-2 px-3">Date</th>
+                    <th className="py-2 px-3">Product</th>
+                    <th className="py-2 px-3">Type</th>
+                    <th className="py-2 px-3 text-right">Change</th>
+                    <th className="py-2 px-3 text-right">Stock After</th>
+                    <th className="py-2 px-3">Reason</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {stockMovements.map((mov) => (
                     <tr key={mov.id}>
-                      <td className="py-2 px-3 text-slate-400 whitespace-nowrap">
+                      <td className="py-2 px-3 text-slate-500 font-mono text-[10px] whitespace-nowrap">
                         {formatDate(mov.date)}
                       </td>
-                      <td className="py-2 px-3 font-semibold text-slate-800 dark:text-white">
+                      <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
                         {mov.productName}
                       </td>
                       <td className="py-2 px-3">
-                        <span className="uppercase text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                          {mov.type.replace('_', ' ')}
+                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          {mov.type}
                         </span>
                       </td>
-                      <td className={`py-2 px-3 text-right font-bold ${
-                        mov.quantityChange > 0 ? 'text-emerald-700' : 'text-red-600'
-                      }`}>
-                        {mov.quantityChange > 0 ? `+${mov.quantityChange}` : mov.quantityChange}
+                      <td className="py-2 px-3 text-right font-mono font-bold">
+                        <span className={mov.quantityChange > 0 ? 'text-emerald-600' : 'text-red-600'}>
+                          {mov.quantityChange > 0 ? `+${mov.quantityChange}` : mov.quantityChange}
+                        </span>
                       </td>
                       <td className="py-2 px-3 text-right font-mono">
                         {mov.quantityAfter}
                       </td>
-                      <td className="py-2 px-3 text-slate-500">
+                      <td className="py-2 px-3 text-slate-500 text-[11px]">
                         {mov.reason || mov.referenceId || '—'}
                       </td>
                     </tr>

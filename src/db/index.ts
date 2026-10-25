@@ -347,16 +347,193 @@ export const SAMPLE_SUPPLIERS: Omit<Supplier, 'id'>[] = [
   }
 ];
 
+export async function purgeDemoData(): Promise<{ purgedCount: number; message: string }> {
+  try {
+    const demoBarcodes = new Set(SAMPLE_PRODUCTS.map((p) => p.barcode));
+    const demoCustomerPhones = new Set(SAMPLE_CUSTOMERS.map((c) => c.phone));
+    const demoInvoiceNumbers = new Set(['MK-20261024-0001', 'MK-20261025-0002']);
+    const demoSupplierNames = new Set(SAMPLE_SUPPLIERS.map((s) => s.name));
+
+    let purgedCount = 0;
+
+    await db.transaction('rw', [
+      db.products,
+      db.customers,
+      db.invoices,
+      db.udharLedger,
+      db.stockMovements,
+      db.suppliers
+    ], async () => {
+      // 1. Purge Demo Products
+      const allProducts = await db.products.toArray();
+      const demoProdIds: number[] = [];
+      for (const p of allProducts) {
+        if (p.id && (demoBarcodes.has(p.barcode) || p.sku.startsWith('ATT-ASH') || p.sku.startsWith('OIL-FOR'))) {
+          demoProdIds.push(p.id);
+        }
+      }
+      if (demoProdIds.length > 0) {
+        await db.products.bulkDelete(demoProdIds);
+        purgedCount += demoProdIds.length;
+      }
+
+      // 2. Purge Demo Customers
+      const allCustomers = await db.customers.toArray();
+      const demoCustIds: number[] = [];
+      for (const c of allCustomers) {
+        if (c.id && demoCustomerPhones.has(c.phone)) {
+          demoCustIds.push(c.id);
+        }
+      }
+      if (demoCustIds.length > 0) {
+        await db.customers.bulkDelete(demoCustIds);
+        purgedCount += demoCustIds.length;
+      }
+
+      // 3. Purge Demo Invoices
+      const allInvoices = await db.invoices.toArray();
+      const demoInvIds: number[] = [];
+      for (const inv of allInvoices) {
+        if (inv.id && demoInvoiceNumbers.has(inv.invoiceNumber)) {
+          demoInvIds.push(inv.id);
+        }
+      }
+      if (demoInvIds.length > 0) {
+        await db.invoices.bulkDelete(demoInvIds);
+      }
+
+      // 4. Purge Demo Udhar
+      const allUdhar = await db.udharLedger.toArray();
+      const demoUdharIds = allUdhar
+        .filter((u) => u.id && u.invoiceNumber && demoInvoiceNumbers.has(u.invoiceNumber))
+        .map((u) => u.id!);
+      if (demoUdharIds.length > 0) {
+        await db.udharLedger.bulkDelete(demoUdharIds);
+      }
+
+      // 5. Purge Demo Stock Movements
+      const allMovements = await db.stockMovements.toArray();
+      const demoMovIds = allMovements
+        .filter((m) => m.id && m.reason === 'Initial store opening stock')
+        .map((m) => m.id!);
+      if (demoMovIds.length > 0) {
+        await db.stockMovements.bulkDelete(demoMovIds);
+      }
+
+      // 6. Purge Demo Suppliers
+      const allSuppliers = await db.suppliers.toArray();
+      const demoSuppIds = allSuppliers
+        .filter((s) => s.id && demoSupplierNames.has(s.name))
+        .map((s) => s.id!);
+      if (demoSuppIds.length > 0) {
+        await db.suppliers.bulkDelete(demoSuppIds);
+      }
+    });
+
+    localStorage.setItem('mohit_demo_purged_v1', 'true');
+    return {
+      purgedCount,
+      message: 'All fake inventory and demo data removed successfully!'
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error purging demo data';
+    return { purgedCount: 0, message: msg };
+  }
+}
+
+export async function autoScanAndSyncData(): Promise<{
+  success: boolean;
+  productsCount: number;
+  customersCount: number;
+  invoicesCount: number;
+  restoredFromSnapshot: boolean;
+  message: string;
+}> {
+  try {
+    // 1. First, check if demo data needs to be purged
+    if (!localStorage.getItem('mohit_demo_purged_v1')) {
+      await purgeDemoData();
+    }
+
+    const productsCount = await db.products.count();
+    const customersCount = await db.customers.count();
+    const invoicesCount = await db.invoices.count();
+
+    const snapshotKey = 'mohit_kirana_offline_snapshot';
+    const snapshotStr = localStorage.getItem(snapshotKey);
+
+    // 2. If Dexie is empty but a local backup snapshot exists, auto-scan & add it!
+    if (productsCount === 0 && customersCount === 0 && snapshotStr) {
+      const parsed = JSON.parse(snapshotStr);
+      if (parsed?.data) {
+        const { data } = parsed;
+        await db.transaction('rw', [
+          db.products,
+          db.customers,
+          db.invoices,
+          db.udharLedger,
+          db.stockMovements,
+          db.suppliers,
+          db.purchases
+        ], async () => {
+          if (data.products?.length) await db.products.bulkAdd(data.products);
+          if (data.customers?.length) await db.customers.bulkAdd(data.customers);
+          if (data.invoices?.length) await db.invoices.bulkAdd(data.invoices);
+          if (data.udharLedger?.length) await db.udharLedger.bulkAdd(data.udharLedger);
+          if (data.stockMovements?.length) await db.stockMovements.bulkAdd(data.stockMovements);
+          if (data.suppliers?.length) await db.suppliers.bulkAdd(data.suppliers);
+          if (data.purchases?.length) await db.purchases.bulkAdd(data.purchases);
+        });
+
+        const newPCount = await db.products.count();
+        const newCCount = await db.customers.count();
+        const newICount = await db.invoices.count();
+
+        return {
+          success: true,
+          productsCount: newPCount,
+          customersCount: newCCount,
+          invoicesCount: newICount,
+          restoredFromSnapshot: true,
+          message: `Auto-scanned & synced ${newPCount} products and ${newCCount} parties from saved data.`
+        };
+      }
+    }
+
+    // 3. Otherwise, update local backup snapshot with current live database state
+    const currentBackup = await exportDatabaseBackup();
+    localStorage.setItem(snapshotKey, currentBackup);
+    localStorage.setItem('mohit_kirana_last_sync', new Date().toISOString());
+
+    return {
+      success: true,
+      productsCount,
+      customersCount,
+      invoicesCount,
+      restoredFromSnapshot: false,
+      message: `Verified: ${productsCount} products, ${customersCount} parties, ${invoicesCount} bills active.`
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error in data auto-sync';
+    return {
+      success: false,
+      productsCount: 0,
+      customersCount: 0,
+      invoicesCount: 0,
+      restoredFromSnapshot: false,
+      message: msg
+    };
+  }
+}
+
 export async function initializeDatabase() {
   const settingsCount = await db.storeSettings.count();
   if (settingsCount === 0) {
     await db.storeSettings.put(DEFAULT_SETTINGS);
   }
 
-  const productsCount = await db.products.count();
-  if (productsCount === 0) {
-    await seedDemoData();
-  }
+  // Automatic data scan, sync and demo purge on initialization
+  await autoScanAndSyncData();
 }
 
 export async function seedDemoData() {

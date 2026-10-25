@@ -12,7 +12,8 @@ import {
   Store,
   Moon,
   Sun,
-  Lock
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -43,6 +44,8 @@ interface Props {
   isPinConfigured: boolean;
   lowStockCount: number;
   totalUdhar: number;
+  onTriggerSync?: () => void;
+  isSyncing?: boolean;
 }
 
 export const Navigation: React.FC<Props> = ({
@@ -54,6 +57,8 @@ export const Navigation: React.FC<Props> = ({
   onLockApp,
   isPinConfigured,
   lowStockCount,
+  onTriggerSync,
+  isSyncing,
 }) => {
   const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -120,18 +125,32 @@ export const Navigation: React.FC<Props> = ({
             <span className="text-[11px] text-kirana-300">Offline-Ready (Dexie)</span>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-semibold text-emerald-300">Active</span>
+              <span className="text-[11px] font-semibold text-emerald-300">Synced</span>
             </div>
           </div>
 
           <div className="flex items-center justify-between pt-1">
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1.5 rounded-lg bg-kirana-900/70 hover:bg-kirana-800 text-kirana-200 transition-colors"
-              title="Toggle theme"
-            >
-              {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className="p-1.5 rounded-lg bg-kirana-900/70 hover:bg-kirana-800 text-kirana-200 transition-colors"
+                title="Toggle theme"
+              >
+                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+
+              {onTriggerSync && (
+                <button
+                  onClick={onTriggerSync}
+                  className={`p-1.5 rounded-lg bg-kirana-900/70 hover:bg-kirana-800 text-kirana-200 transition-colors ${
+                    isSyncing ? 'animate-spin text-emerald-300' : ''
+                  }`}
+                  title="Auto-Scan & Verify Data"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              )}
+            </div>
 
             {isPinConfigured && onLockApp && (
               <button
@@ -159,6 +178,17 @@ export const Navigation: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onTriggerSync && (
+            <button
+              onClick={onTriggerSync}
+              className={`p-1.5 rounded-lg text-kirana-300 hover:text-white ${
+                isSyncing ? 'animate-spin text-emerald-400' : ''
+              }`}
+              title="Auto-Scan & Sync Data"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          )}
           {isPinConfigured && onLockApp && (
             <button
               onClick={onLockApp}

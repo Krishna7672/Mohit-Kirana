@@ -1,4 +1,4 @@
-export type UnitType = 'kg' | 'g' | 'litre' | 'ml' | 'packet' | 'piece' | 'dozen';
+export type UnitType = 'kg' | 'g' | 'litre' | 'ml' | 'packet' | 'piece' | 'dozen' | 'box' | 'bottle' | 'carton';
 
 export type PaymentMethod = 'cash' | 'upi' | 'split' | 'udhar';
 
