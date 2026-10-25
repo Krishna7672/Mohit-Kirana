@@ -1,0 +1,9 @@
+{
+  "appId": "com.mohitkirana.app",
+  "appName": "Mohit Kirana",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

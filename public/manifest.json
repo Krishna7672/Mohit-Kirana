@@ -1,0 +1,17 @@
+{
+  "name": "Mohit Kirana - Grocery POS & Store Management",
+  "short_name": "Mohit Kirana",
+  "description": "Offline-ready grocery shop management, POS billing, customer ledger and inventory control",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0fdf4",
+  "theme_color": "#15803d",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

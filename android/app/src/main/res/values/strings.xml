@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Mohit Kirana</string>
+    <string name="title_activity_main">Mohit Kirana</string>
+    <string name="package_name">com.mohitkirana.app</string>
+    <string name="custom_url_scheme">com.mohitkirana.app</string>
+</resources>
