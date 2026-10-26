@@ -47,6 +47,8 @@ export interface InvoiceItem {
   sellingPrice: number;
   discount: number;
   total: number;
+  subUnitLabel?: string;
+  isCustomPrice?: boolean;
 }
 
 export interface Invoice {
@@ -159,4 +161,6 @@ export interface CartItem {
   unitPrice: number;
   discount: number;
   total: number;
+  subUnitLabel?: string;
+  isCustomPrice?: boolean;
 }

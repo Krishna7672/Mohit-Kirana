@@ -12,10 +12,12 @@ import type {
 } from '../types';
 import {
   formatINR,
-  generateInvoiceNumber
+  generateInvoiceNumber,
+  formatQuantityWithSubUnit
 } from '../utils/formatters';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
-import type { ExtractedProductDetails } from '../utils/productOcr';
+import { WeightPriceAdjustModal } from '../components/WeightPriceAdjustModal';
+import { UpdatePreviousUdharModal } from '../components/UpdatePreviousUdharModal';
 import {
   Search,
   Barcode,
@@ -39,7 +41,9 @@ import {
   Package,
   ArrowRight,
   User,
-  ChevronRight
+  ChevronRight,
+  Scale,
+  Edit2
 } from 'lucide-react';
 
 interface Props {
@@ -62,7 +66,6 @@ export const POSBillingView: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scannerInitialTab, setScannerInitialTab] = useState<'product' | 'barcode'>('product');
 
   // Mobile layout tab switcher ('catalog' vs 'cart')
   const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
@@ -73,10 +76,18 @@ export const POSBillingView: React.FC<Props> = ({
   const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
   const [customerModalSearch, setCustomerModalSearch] = useState('');
 
+  // Weight & Price adjustment modal
+  const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
+  const [isWeightPriceModalOpen, setIsWeightPriceModalOpen] = useState(false);
+
+  // Update previous udhaar modal
+  const [isUpdatePreviousUdharOpen, setIsUpdatePreviousUdharOpen] = useState(false);
+
   // Inline / Modal New Customer Form
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustAddress, setNewCustAddress] = useState('');
+  const [newCustPreviousUdhar, setNewCustPreviousUdhar] = useState('');
 
   // Walk-in customer name (optional)
   const [walkInName, setWalkInName] = useState('');
@@ -155,8 +166,8 @@ export const POSBillingView: React.FC<Props> = ({
     );
   }, [customers, customerModalSearch]);
 
-  // Add product to cart
-  const addToCart = (product: Product, qtyToAdd: number = 1) => {
+  // Add product to cart with optional sub-unit label (e.g. 250g, 25g)
+  const addToCart = (product: Product, qtyToAdd: number = 1, subUnitLabel?: string) => {
     if (product.stockQuantity <= 0) {
       alert(`"${product.name}" is currently out of stock!`);
       return;
@@ -166,7 +177,7 @@ export const POSBillingView: React.FC<Props> = ({
       const existingIndex = prevCart.findIndex((item) => item.product.id === product.id);
       if (existingIndex > -1) {
         const item = prevCart[existingIndex];
-        const newQty = item.quantity + qtyToAdd;
+        const newQty = Math.round((item.quantity + qtyToAdd) * 1000) / 1000;
         if (newQty > product.stockQuantity) {
           alert(`Cannot add more than available stock (${product.stockQuantity} ${product.unit}).`);
           return prevCart;
@@ -175,7 +186,8 @@ export const POSBillingView: React.FC<Props> = ({
         updated[existingIndex] = {
           ...item,
           quantity: newQty,
-          total: (newQty * item.unitPrice) - item.discount,
+          subUnitLabel: subUnitLabel || item.subUnitLabel,
+          total: Math.round(((newQty * item.unitPrice) - item.discount) * 100) / 100,
         };
         return updated;
       } else {
@@ -187,7 +199,8 @@ export const POSBillingView: React.FC<Props> = ({
             quantity: initialQty,
             unitPrice: product.sellingPrice,
             discount: 0,
-            total: initialQty * product.sellingPrice,
+            subUnitLabel,
+            total: Math.round((initialQty * product.sellingPrice) * 100) / 100,
           },
         ];
       }
@@ -195,28 +208,43 @@ export const POSBillingView: React.FC<Props> = ({
   };
 
   // Modify quantity in cart
-  const updateQuantity = (productId: number, newQty: number) => {
+  const updateQuantity = (productId: number, newQty: number, subUnitLabel?: string) => {
     if (newQty <= 0) {
       removeFromCart(productId);
       return;
     }
 
+    const roundedQty = Math.round(newQty * 1000) / 1000;
+
     setCart((prevCart) =>
       prevCart.map((item) => {
         if (item.product.id === productId) {
-          if (newQty > item.product.stockQuantity) {
+          if (roundedQty > item.product.stockQuantity) {
             alert(`Stock limit reached! Only ${item.product.stockQuantity} ${item.product.unit} available.`);
             return item;
           }
           return {
             ...item,
-            quantity: newQty,
-            total: (newQty * item.unitPrice) - item.discount,
+            quantity: roundedQty,
+            subUnitLabel: subUnitLabel !== undefined ? subUnitLabel : item.subUnitLabel,
+            total: Math.round(((roundedQty * item.unitPrice) - item.discount) * 100) / 100,
           };
         }
         return item;
       })
     );
+  };
+
+  // Apply full item updates from WeightPriceAdjustModal
+  const updateCartItemFull = (updatedItem: CartItem) => {
+    setCart((prevCart) =>
+      prevCart.map((item) => (item.product.id === updatedItem.product.id ? updatedItem : item))
+    );
+  };
+
+  // Quick preset selector (25g, 50g, 100g, 250g, etc.)
+  const handleQuickPreset = (productId: number, presetQty: number, presetLabel: string) => {
+    updateQuantity(productId, presetQty, presetLabel);
   };
 
   // Remove item from cart
@@ -238,78 +266,6 @@ export const POSBillingView: React.FC<Props> = ({
       setTimeout(() => setNotification(null), 2500);
     } else {
       alert(`No product found with barcode: "${code}". You can add it in Inventory.`);
-    }
-  };
-
-  // Whole Product AI Details Extracted Handler
-  const handleProductExtracted = async (extracted: ExtractedProductDetails) => {
-    // 1. Try to find existing product in store by barcode, sku, or similar name
-    let match = products.find(
-      (p) =>
-        (extracted.barcode && p.barcode === extracted.barcode) ||
-        (extracted.barcode && p.sku.toLowerCase() === extracted.barcode.toLowerCase()) ||
-        p.name.toLowerCase() === extracted.name.toLowerCase()
-    );
-
-    if (match) {
-      addToCart(match, 1);
-      setNotification({
-        type: 'success',
-        message: `✨ Identified "${match.name}" (₹${match.sellingPrice}) and added to bill!`,
-      });
-      setTimeout(() => setNotification(null), 3500);
-      return;
-    }
-
-    // 2. If it's a new product not yet in inventory, auto-register it directly
-    const sellingPrice = extracted.price || 10;
-    const purchasePrice = extracted.purchasePrice || Math.round(sellingPrice * 0.85);
-    const now = new Date().toISOString();
-
-    const currentTerminal = settings?.posTerminalName || localStorage.getItem('kirana_pos_terminal') || 'POS-1';
-    const newProd: Omit<Product, 'id'> = {
-      name: extracted.name,
-      category: extracted.category || 'General Grocery',
-      brand: extracted.brand || 'Generic',
-      sku: extracted.barcode ? `SKU-${extracted.barcode.slice(-6)}` : `SKU-${Date.now().toString().slice(-6)}`,
-      barcode: extracted.barcode || `AUTO-${Date.now().toString().slice(-6)}`,
-      unit: extracted.unit || 'packet',
-      purchasePrice,
-      sellingPrice,
-      stockQuantity: 20, // default initial stock
-      minStockThreshold: 5,
-      supplierName: 'Scanned In-Store',
-      expiryDate: extracted.expiryDate || '',
-      addedByTerminal: currentTerminal,
-      isArchived: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    try {
-      const newId = await db.products.add(newProd as Product);
-      const createdProd = { ...newProd, id: newId } as Product;
-
-      await db.stockMovements.add({
-        productId: newId,
-        productName: createdProd.name,
-        type: 'manual_in',
-        quantityChange: 20,
-        quantityAfter: 20,
-        reason: `Auto-added from Whole Product AI camera scan (${currentTerminal})`,
-        posTerminalName: currentTerminal,
-        date: now,
-      });
-
-      addToCart(createdProd, 1);
-      setNotification({
-        type: 'success',
-        message: `🎉 Saved "${createdProd.name}" (₹${sellingPrice}) to store & added to bill!`,
-      });
-      setTimeout(() => setNotification(null), 4000);
-    } catch (err) {
-      console.error('Failed to auto-add scanned product:', err);
-      alert(`Could not save product: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -370,6 +326,7 @@ export const POSBillingView: React.FC<Props> = ({
       return;
     }
 
+    const prevAmt = parseFloat(newCustPreviousUdhar) || 0;
     const newCust: Omit<Customer, 'id'> = {
       name: newCustName.trim(),
       phone: cleanPhone,
@@ -377,12 +334,25 @@ export const POSBillingView: React.FC<Props> = ({
       registrationDate: new Date().toISOString(),
       purchaseCount: 0,
       totalSpending: 0,
-      outstandingUdhar: 0,
+      outstandingUdhar: prevAmt,
       communicationConsent: true,
       updatedAt: new Date().toISOString(),
     };
 
     const id = await db.customers.add(newCust as Customer);
+    if (prevAmt > 0) {
+      await db.udharLedger.add({
+        customerId: id,
+        customerName: newCust.name,
+        customerPhone: newCust.phone,
+        type: 'adjustment',
+        amount: prevAmt,
+        balanceAfter: prevAmt,
+        notes: 'Previous Udhar / पिछला बकाया (Old Balance - Date Unknown)',
+        date: new Date().toISOString(),
+      });
+    }
+
     const created = await db.customers.get(id);
     if (created) {
       setSelectedCustomer(created);
@@ -391,11 +361,12 @@ export const POSBillingView: React.FC<Props> = ({
       setNewCustName('');
       setNewCustPhone('');
       setNewCustAddress('');
+      setNewCustPreviousUdhar('');
       setNotification({
         type: 'success',
-        message: `Registered new customer: ${created.name}`,
+        message: `Registered new customer: ${created.name}${prevAmt > 0 ? ` with previous udhar ${formatINR(prevAmt)}` : ''}`,
       });
-      setTimeout(() => setNotification(null), 2500);
+      setTimeout(() => setNotification(null), 3000);
     }
   };
 
@@ -499,13 +470,15 @@ export const POSBillingView: React.FC<Props> = ({
           posTerminalName: currentTerminal,
           items: cart.map((c) => ({
             productId: c.product.id!,
-            name: c.product.name,
+            name: c.subUnitLabel ? `${c.product.name} (${c.subUnitLabel})` : c.product.name,
             unit: c.product.unit,
             quantity: c.quantity,
             purchasePrice: c.product.purchasePrice,
             sellingPrice: c.unitPrice,
             discount: c.discount,
             total: c.total,
+            subUnitLabel: c.subUnitLabel,
+            isCustomPrice: c.isCustomPrice,
           })),
           subtotal,
           discountAmount: overallDiscount,
@@ -527,7 +500,7 @@ export const POSBillingView: React.FC<Props> = ({
         for (const item of cart) {
           const fresh = await db.products.get(item.product.id!);
           if (fresh) {
-            const newStock = Math.max(0, fresh.stockQuantity - item.quantity);
+            const newStock = Math.max(0, Math.round((fresh.stockQuantity - item.quantity) * 1000) / 1000);
             await db.products.update(fresh.id!, {
               stockQuantity: newStock,
               updatedAt: now,
@@ -694,6 +667,15 @@ export const POSBillingView: React.FC<Props> = ({
           <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
             {selectedCustomer ? (
               <>
+                <button
+                  type="button"
+                  onClick={() => setIsUpdatePreviousUdharOpen(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/70 dark:hover:bg-amber-900/70 text-amber-900 dark:text-amber-200 text-xs font-bold rounded-xl border border-amber-300 dark:border-amber-800 transition-all active:scale-95 shadow-xs"
+                  title="Update customer previous udhaar without needing a date"
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                  <span>Update Udhar</span>
+                </button>
                 {lastCustomerInvoice && (
                   <button
                     onClick={handleRepeatPreviousBill}
@@ -831,30 +813,15 @@ export const POSBillingView: React.FC<Props> = ({
                 )}
               </div>
 
-              {/* AI Whole Product Scan Button */}
-              <button
-                onClick={() => {
-                  setScannerInitialTab('product');
-                  setIsScannerOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-kirana-600 hover:bg-kirana-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all shrink-0 active:scale-95"
-                title="Scan whole product packet with AI to extract details"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-                <span className="hidden sm:inline">AI Product Scan</span>
-              </button>
-
               {/* Barcode Scanner Button */}
               <button
-                onClick={() => {
-                  setScannerInitialTab('barcode');
-                  setIsScannerOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-600 shadow-sm transition-all shrink-0 active:scale-95"
+                type="button"
+                onClick={() => setIsScannerOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-kirana-600 hover:bg-kirana-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all shrink-0 active:scale-95"
                 title="Scan barcode with camera"
               >
-                <Barcode className="w-4 h-4" />
-                <span className="hidden md:inline">Barcode</span>
+                <Barcode className="w-4 h-4 text-amber-300" />
+                <span>Scan Barcode</span>
               </button>
             </div>
 
@@ -937,6 +904,43 @@ export const POSBillingView: React.FC<Props> = ({
                           /{product.unit}
                         </span>
                       </div>
+
+                      {/* Quick fraction chips for kg & litre items right on catalog card */}
+                      {['kg', 'litre'].includes(product.unit) && !isOutOfStock && (
+                        <div
+                          className="mt-2 pt-1.5 border-t border-dashed border-slate-100 dark:border-slate-700/80 flex items-center gap-1 overflow-x-auto scrollbar-none"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span className="text-[9px] text-slate-400 font-bold shrink-0">Add:</span>
+                          {(product.unit === 'kg'
+                            ? [
+                                { label: '25g', qty: 0.025 },
+                                { label: '250g', qty: 0.25 },
+                                { label: '500g', qty: 0.5 },
+                                { label: '1kg', qty: 1 },
+                              ]
+                            : [
+                                { label: '50ml', qty: 0.05 },
+                                { label: '250ml', qty: 0.25 },
+                                { label: '500ml', qty: 0.5 },
+                                { label: '1L', qty: 1 },
+                              ]
+                          ).map((preset) => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addToCart(product, preset.qty, preset.label);
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-kirana-50 hover:bg-kirana-600 hover:text-white dark:bg-slate-700 dark:hover:bg-kirana-600 text-[10px] font-bold text-kirana-800 dark:text-kirana-300 transition-colors"
+                              title={`Add ${preset.label} to bill`}
+                            >
+                              +{preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -977,61 +981,171 @@ export const POSBillingView: React.FC<Props> = ({
                   </button>
                 </div>
               ) : (
-                cart.map((item) => (
-                  <div
-                    key={item.product.id}
-                    className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <h5 className="text-xs font-bold text-slate-800 dark:text-white truncate">
-                        {item.product.name}
-                      </h5>
-                      <p className="text-[10px] text-slate-500">
-                        {formatINR(item.unitPrice)} / {item.product.unit}
-                      </p>
-                    </div>
+                cart.map((item) => {
+                  const isKg = item.product.unit === 'kg';
+                  const isLitre = item.product.unit === 'litre';
+                  const isFractional = isKg || isLitre;
 
-                    {/* Quantity Stepper with Decimal Input Support */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => updateQuantity(item.product.id!, item.quantity - 1)}
-                        className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-slate-700 dark:text-white hover:bg-slate-300 active:scale-95"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <input
-                        type="number"
-                        step={['kg', 'litre', 'g', 'ml'].includes(item.product.unit) ? '0.1' : '1'}
-                        min="0.1"
-                        value={item.quantity}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          if (!isNaN(val)) updateQuantity(item.product.id!, val);
-                        }}
-                        className="w-12 text-center text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded py-1"
-                      />
-                      <button
-                        onClick={() => updateQuantity(item.product.id!, item.quantity + 1)}
-                        className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-slate-700 dark:text-white hover:bg-slate-300 active:scale-95"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                  return (
+                    <div
+                      key={item.product.id}
+                      className={`p-3 rounded-2xl border transition-all ${
+                        item.isCustomPrice
+                          ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/60'
+                          : 'bg-slate-50 dark:bg-slate-750 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h5 className="text-xs font-bold text-slate-800 dark:text-white truncate">
+                              {item.product.name}
+                            </h5>
+                            {item.subUnitLabel && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-kirana-100 dark:bg-kirana-950 text-kirana-800 dark:text-kirana-300 text-[10px] font-black">
+                                {item.subUnitLabel}
+                              </span>
+                            )}
+                            {item.isCustomPrice && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[9px] font-bold">
+                                Adjusted Rate
+                              </span>
+                            )}
+                          </div>
 
-                    {/* Item Total */}
-                    <div className="text-right min-w-[70px]">
-                      <span className="text-xs font-black text-slate-900 dark:text-white block">
-                        {formatINR(item.total)}
-                      </span>
-                      <button
-                        onClick={() => removeFromCart(item.product.id!)}
-                        className="text-[10px] text-red-500 hover:text-red-700"
-                      >
-                        remove
-                      </button>
+                          <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
+                            <span>
+                              {formatINR(item.unitPrice)} / {item.product.unit}
+                            </span>
+                            {item.isCustomPrice && (
+                              <span className="line-through text-[10px] text-slate-400">
+                                (Orig: {formatINR(item.product.sellingPrice)})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Item Total & Remove */}
+                        <div className="text-right shrink-0">
+                          <span className="text-sm font-black text-slate-900 dark:text-white block">
+                            {formatINR(item.total)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(item.product.id!)}
+                            className="text-[10px] text-red-500 hover:text-red-700 hover:underline"
+                          >
+                            remove
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Stepper + Weight / Price Adjust Button */}
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2 flex-wrap">
+                        {/* Quantity Stepper */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const step = isFractional ? 0.25 : 1;
+                              const nextVal = Math.max(0.025, Math.round((item.quantity - step) * 1000) / 1000);
+                              updateQuantity(item.product.id!, nextVal);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-slate-700 dark:text-white hover:bg-slate-300 active:scale-95"
+                            title="Decrease quantity"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+
+                          <div className="relative">
+                            <input
+                              type="number"
+                              step={isFractional ? '0.025' : '1'}
+                              min="0.001"
+                              value={item.quantity}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                if (!isNaN(val)) updateQuantity(item.product.id!, val);
+                              }}
+                              className="w-16 text-center text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg py-1 text-slate-900 dark:text-white"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const step = isFractional ? 0.25 : 1;
+                              const nextVal = Math.round((item.quantity + step) * 1000) / 1000;
+                              updateQuantity(item.product.id!, nextVal);
+                            }}
+                            className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-slate-700 dark:text-white hover:bg-slate-300 active:scale-95"
+                            title="Increase quantity"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+
+                          <span className="text-[11px] font-semibold text-slate-500 ml-1">
+                            {formatQuantityWithSubUnit(item.quantity, item.product.unit, item.subUnitLabel)}
+                          </span>
+                        </div>
+
+                        {/* Adjust Price & Weight Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCartItem(item);
+                            setIsWeightPriceModalOpen(true);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-kirana-50 hover:text-kirana-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 shadow-xs transition-all active:scale-95"
+                          title="Adjust weight in grams / ml or modify selling price"
+                        >
+                          <Scale className="w-3.5 h-3.5 text-kirana-600" />
+                          <span>⚖️ Edit Weight / Price</span>
+                        </button>
+                      </div>
+
+                      {/* Quick 1-Tap Weight Chips for kg & litre */}
+                      {isFractional && (
+                        <div className="mt-2 pt-1.5 flex items-center gap-1 overflow-x-auto scrollbar-none">
+                          <span className="text-[9px] font-bold text-slate-400 shrink-0">Quick Qty:</span>
+                          {(isKg
+                            ? [
+                                { label: '25g', qty: 0.025 },
+                                { label: '50g', qty: 0.05 },
+                                { label: '100g', qty: 0.1 },
+                                { label: '250g', qty: 0.25 },
+                                { label: '500g', qty: 0.5 },
+                                { label: '1kg', qty: 1 },
+                              ]
+                            : [
+                                { label: '50ml', qty: 0.05 },
+                                { label: '100ml', qty: 0.1 },
+                                { label: '250ml', qty: 0.25 },
+                                { label: '500ml', qty: 0.5 },
+                                { label: '1L', qty: 1 },
+                              ]
+                          ).map((preset) => {
+                            const isMatch = Math.abs(item.quantity - preset.qty) < 0.001;
+                            return (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => handleQuickPreset(item.product.id!, preset.qty, preset.label)}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap transition-all border ${
+                                  isMatch
+                                    ? 'bg-kirana-700 text-white border-kirana-700 shadow-xs'
+                                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                                }`}
+                              >
+                                {preset.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -1393,6 +1507,27 @@ export const POSBillingView: React.FC<Props> = ({
                 />
               </div>
 
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Previous Udhar / पिछला उधार (₹)
+                  </label>
+                  <span className="text-[10px] text-slate-400">Optional</span>
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="0.00 (तारीख याद न हो तो भी भर सकते हैं)"
+                  value={newCustPreviousUdhar}
+                  onChange={(e) => setNewCustPreviousUdhar(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                />
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  💡 No date required. Records immediately in customer&apos;s khata.
+                </p>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -1413,14 +1548,38 @@ export const POSBillingView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* 7. BARCODE & WHOLE PRODUCT CAMERA SCANNER MODAL */}
+      {/* 7. WEIGHT & PRICE ADJUST MODAL */}
+      <WeightPriceAdjustModal
+        isOpen={isWeightPriceModalOpen}
+        onClose={() => {
+          setIsWeightPriceModalOpen(false);
+          setEditingCartItem(null);
+        }}
+        item={editingCartItem}
+        onSave={updateCartItemFull}
+      />
+
+      {/* 8. UPDATE PREVIOUS UDHAR MODAL */}
+      <UpdatePreviousUdharModal
+        isOpen={isUpdatePreviousUdharOpen}
+        onClose={() => setIsUpdatePreviousUdharOpen(false)}
+        customer={selectedCustomer}
+        customersList={customers}
+        onSuccess={(updated) => {
+          setSelectedCustomer(updated);
+          setNotification({
+            type: 'success',
+            message: `Updated Udhaar for ${updated.name}: ${formatINR(updated.outstandingUdhar)}`,
+          });
+          setTimeout(() => setNotification(null), 3000);
+        }}
+      />
+
+      {/* 9. FAST BARCODE SCANNER MODAL */}
       <BarcodeScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleBarcodeScanned}
-        onProductExtracted={handleProductExtracted}
-        initialTab={scannerInitialTab}
-        defaultGeminiApiKey={settings?.geminiApiKey}
       />
     </div>
   );

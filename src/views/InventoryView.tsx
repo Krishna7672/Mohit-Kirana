@@ -5,7 +5,6 @@ import type { Product, UnitType, StoreSettings } from '../types';
 import { formatINR, formatDate } from '../utils/formatters';
 import { exportProductsCSV, parseProductsCSV } from '../utils/csv';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
-import type { ExtractedProductDetails } from '../utils/productOcr';
 import { MASTER_GROCERY_CATALOG, type CatalogItem } from '../data/masterCatalog';
 import {
   Package,
@@ -48,7 +47,6 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
   // Scanner state
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannerTarget, setScannerTarget] = useState<'inventorySearch' | 'formBarcode'>('inventorySearch');
-  const [scannerInitialTab, setScannerInitialTab] = useState<'product' | 'barcode'>('product');
 
   // Modals state
   const [isAddEditOpen, setIsAddEditOpen] = useState(openNewProductModalOnMount || false);
@@ -489,54 +487,6 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     }
   };
 
-  // Whole Product AI Details Extracted Handler
-  const handleProductExtracted = (extracted: ExtractedProductDetails) => {
-    // If an existing product already has this barcode or exact name, ask user if they want to edit it
-    const existing = products.find(
-      (p) =>
-        (extracted.barcode && p.barcode === extracted.barcode) ||
-        p.name.toLowerCase() === extracted.name.toLowerCase()
-    );
-
-    if (existing) {
-      openEditModal(existing);
-      setAutoFillNotice(`Found existing store item "${existing.name}". Updated with fresh scan details!`);
-    } else {
-      openNewModal();
-    }
-
-    // Populate all form fields with extracted data
-    setFormName(extracted.name);
-    setFormBrand(extracted.brand);
-    setFormCategory(extracted.category || 'General Grocery');
-    setFormUnit(extracted.unit);
-    
-    if (extracted.price) {
-      setFormSellingPrice(extracted.price.toString());
-    }
-    if (extracted.purchasePrice) {
-      setFormPurchasePrice(extracted.purchasePrice.toString());
-    } else if (extracted.price) {
-      setFormPurchasePrice(Math.round(extracted.price * 0.85).toString());
-    }
-    
-    if (extracted.barcode) {
-      setFormBarcode(extracted.barcode);
-      setFormSku(`SKU-${extracted.barcode.slice(-6)}`);
-    }
-
-    if (extracted.expiryDate) {
-      setFormExpiryDate(extracted.expiryDate);
-    }
-
-    if (!formStockQuantity || formStockQuantity === '0') {
-      setFormStockQuantity('15');
-    }
-
-    setAutoFillNotice(`✨ Auto-extracted details for "${extracted.name}" from packaging scan!`);
-    setTimeout(() => setAutoFillNotice(null), 5000);
-  };
-
   // Categories list
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -649,20 +599,6 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* AI Scan Whole Product Button */}
-          <button
-            onClick={() => {
-              setScannerTarget('formBarcode');
-              setScannerInitialTab('product');
-              setIsScannerOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-kirana-600 to-emerald-600 hover:from-kirana-700 hover:to-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-kirana-700/20 transition-all active:scale-95"
-            title="Scan whole product packet with camera and extract details"
-          >
-            <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-            <span>AI Product Scan</span>
-          </button>
-
           {/* MASTER CATALOG QUICK ADD BUTTON */}
           <button
             onClick={() => setIsCatalogModalOpen(true)}
@@ -776,32 +712,17 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
             )}
           </div>
 
-          {/* AI Scan Whole Product Button */}
-          <button
-            onClick={() => {
-              setScannerTarget('formBarcode');
-              setScannerInitialTab('product');
-              setIsScannerOpen(true);
-            }}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-kirana-600 hover:bg-kirana-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm active:scale-95 transition-all"
-            title="Scan whole packet with AI to extract details"
-          >
-            <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-            <span>AI Product Scan</span>
-          </button>
-
           {/* Barcode Scanner Button */}
           <button
             onClick={() => {
               setScannerTarget('inventorySearch');
-              setScannerInitialTab('barcode');
               setIsScannerOpen(true);
             }}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-medium shrink-0 border border-slate-200 dark:border-slate-600 shadow-sm active:scale-95 transition-all"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shrink-0 border border-slate-200 dark:border-slate-600 shadow-sm active:scale-95 transition-all"
             title="Scan product barcode with camera"
           >
-            <Barcode className="w-4 h-4" />
-            <span>Barcode</span>
+            <Barcode className="w-4 h-4 text-kirana-600 dark:text-kirana-400" />
+            <span>Scan Barcode</span>
           </button>
         </div>
 
@@ -1139,31 +1060,6 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                 <span>{autoFillNotice}</span>
               </div>
             )}
-
-            {/* Quick Auto-Fill by Scanning Whole Product Banner */}
-            <div className="m-4 mb-0 p-3 bg-gradient-to-r from-kirana-50 to-emerald-50 dark:from-slate-800 dark:to-emerald-950/30 border border-kirana-200 dark:border-emerald-800/50 rounded-2xl flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-kirana-600 text-white rounded-xl shadow-xs">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-white">Auto-Fill by Scanning Product Packaging</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Snap a photo of packet to extract name, MRP, weight & barcode automatically</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setScannerTarget('formBarcode');
-                  setScannerInitialTab('product');
-                  setIsScannerOpen(true);
-                }}
-                className="px-3 py-1.5 bg-kirana-600 hover:bg-kirana-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Scan Packet</span>
-              </button>
-            </div>
 
             <form onSubmit={handleSaveProduct} className="p-5 space-y-4 text-xs">
               {/* Product Name with autocomplete datalist */}
@@ -1561,14 +1457,11 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
         </div>
       )}
 
-      {/* Barcode & Whole Product Camera Scanner */}
+      {/* Fast Barcode Camera Scanner */}
       <BarcodeScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleBarcodeScanned}
-        onProductExtracted={handleProductExtracted}
-        initialTab={scannerInitialTab}
-        defaultGeminiApiKey={settings?.geminiApiKey}
       />
     </div>
   );

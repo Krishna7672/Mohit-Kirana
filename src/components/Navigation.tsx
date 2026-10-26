@@ -79,8 +79,8 @@ export const Navigation: React.FC<Props> = ({
       <aside className={`no-print ${forceMobileLayout ? 'hidden' : 'hidden lg:flex'} flex-col w-64 bg-kirana-950 text-white shrink-0 shadow-xl border-r border-kirana-900 z-30`}>
         {/* Brand Header */}
         <div className="p-5 flex items-center gap-3 border-b border-kirana-900/60 bg-kirana-900/30">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-kirana-500 to-kirana-600 flex items-center justify-center text-white shadow-md shadow-kirana-500/20">
-            <Store className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md shadow-kirana-500/20 ring-1 ring-white/10 shrink-0">
+            <img src="/favicon.svg" alt="Mohit Kirana Logo" className="w-full h-full object-cover" />
           </div>
           <div className="overflow-hidden">
             <h1 className="font-extrabold text-base tracking-tight text-white truncate">
@@ -171,8 +171,8 @@ export const Navigation: React.FC<Props> = ({
       {/* Mobile Top App Bar */}
       <header className={`no-print ${forceMobileLayout ? 'fixed top-0 max-w-md inset-x-0 mx-auto' : 'fixed top-0 inset-x-0 lg:hidden'} h-14 bg-kirana-950 text-white flex items-center justify-between px-4 z-40 border-b border-kirana-900 shadow-md`}>
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-kirana-600 flex items-center justify-center text-white font-black text-sm">
-            MK
+          <div className="w-8 h-8 rounded-lg overflow-hidden ring-1 ring-white/10 shrink-0 shadow-sm">
+            <img src="/favicon.svg" alt="Mohit Kirana Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-bold text-sm tracking-tight truncate max-w-[150px]">
             {shopName || 'Mohit Kirana'}

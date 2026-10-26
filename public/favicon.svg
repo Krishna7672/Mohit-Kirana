@@ -1,13 +1,93 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#16a34a" />
-      <stop offset="100%" stop-color="#14532d" />
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="50%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#064e3b" />
     </linearGradient>
+
+    <!-- Top Highlight Glass Glow -->
+    <linearGradient id="glossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
+    </linearGradient>
+
+    <!-- Gold Accent Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+
+    <!-- Basket Body Gradient -->
+    <linearGradient id="basketGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </linearGradient>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#022c22" flood-opacity="0.45" />
+    </filter>
+
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
   </defs>
-  <rect width="100" height="100" rx="24" fill="url(#grad)" />
-  <path d="M26 36 L74 36 L68 70 C67 75 63 78 58 78 L42 78 C37 78 33 75 32 70 Z" fill="#ffffff" opacity="0.95" />
-  <path d="M38 36 V28 C38 21.4 43.4 16 50 16 C56.6 16 62 21.4 62 28 V36" stroke="#ffffff" stroke-width="6" stroke-linecap="round" fill="none" />
-  <circle cx="50" cy="54" r="8" fill="#16a34a" />
-  <path d="M47 54 L53 54 M50 49 L50 59" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+
+  <!-- App Squircle Base -->
+  <rect width="512" height="512" rx="118" fill="url(#bgGrad)" />
+
+  <!-- Top Glass Highlight Overlay -->
+  <path d="M0 118 C0 52.8 52.8 0 118 0 L394 0 C459.2 0 512 52.8 512 118 L512 210 C350 250 162 250 0 210 Z" fill="url(#glossGrad)" />
+
+  <!-- Outer Border Ring for Crisp Contrast -->
+  <rect x="6" y="6" width="500" height="500" rx="112" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.2" />
+
+  <!-- Main Emblem Group with Shadow -->
+  <g filter="url(#dropShadow)">
+    <!-- Fresh Kirana Sprout / Leaves (Prosperity & Fresh Food) -->
+    <!-- Left Leaf -->
+    <path d="M256 160 C230 115 170 120 160 165 C175 195 220 185 256 160 Z" fill="#34d399" />
+    <path d="M190 170 C215 155 240 160 256 160" stroke="#059669" stroke-width="3" stroke-linecap="round" fill="none" />
+
+    <!-- Right Golden Grain / Leaf (Abundance) -->
+    <path d="M256 160 C282 110 345 115 352 162 C335 190 290 182 256 160 Z" fill="url(#goldGrad)" />
+    <path d="M322 168 C298 155 272 160 256 160" stroke="#b45309" stroke-width="3" stroke-linecap="round" fill="none" />
+
+    <!-- Modern Shopping Basket Handle -->
+    <path d="M176 220 V168 C176 123.8 211.8 88 256 88 C300.2 88 336 123.8 336 168 V220" 
+          stroke="#ffffff" stroke-width="26" stroke-linecap="round" fill="none" />
+
+    <!-- Basket Rim -->
+    <rect x="110" y="210" width="292" height="34" rx="17" fill="#ffffff" />
+
+    <!-- Basket Body (Trapezoid with smooth rounded corners) -->
+    <path d="M136 244 L162 380 C165 396 179 408 195 408 L317 408 C333 408 347 396 350 380 L376 244 Z" 
+          fill="url(#basketGrad)" />
+
+    <!-- Basket Vent / Slats (Modern Retail Design) -->
+    <g stroke="#cbd5e1" stroke-width="6" stroke-linecap="round">
+      <line x1="184" y1="268" x2="200" y2="384" />
+      <line x1="232" y1="268" x2="238" y2="384" />
+      <line x1="280" y1="268" x2="274" y2="384" />
+      <line x1="328" y1="268" x2="312" y2="384" />
+    </g>
+
+    <!-- Center Golden Rupee Emblem (Smart POS / Billing) -->
+    <g transform="translate(256, 332)">
+      <circle cx="0" cy="0" r="42" fill="url(#goldGrad)" />
+      <circle cx="0" cy="0" r="39" fill="none" stroke="#fef3c7" stroke-width="2.5" />
+      <!-- Stylized Rupee Symbol (₹) -->
+      <path d="M-15 -17 H15 M-15 -9 H10 M-15 -17 H-3 C6 -17 11 -13 11 -4 C11 4 5 8 -3 8 H-14 L12 21" 
+            stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+    </g>
+  </g>
+
+  <!-- Sparkle Accent on top corner -->
+  <g transform="translate(390, 95)" fill="url(#goldGrad)" opacity="0.95">
+    <path d="M0 -18 Q0 0 18 0 Q0 0 0 18 Q0 0 -18 0 Q0 0 0 -18 Z" />
+  </g>
 </svg>

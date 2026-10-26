@@ -4,6 +4,7 @@ import { db } from '../db';
 import type { Customer, UdharEntry, StoreSettings } from '../types';
 import { formatINR, formatDate, formatDateTime } from '../utils/formatters';
 import { buildUdharReminderMessage, getWhatsAppClickUrl, getSmsClickUrl } from '../utils/notifications';
+import { UpdatePreviousUdharModal } from '../components/UpdatePreviousUdharModal';
 import {
   BookOpen,
   CreditCard,
@@ -30,6 +31,10 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+
+  // Previous Udhar Adjustment Modal
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [adjustingCustomer, setAdjustingCustomer] = useState<Customer | null>(null);
 
   // Repayment Modal
   const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
@@ -131,26 +136,40 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
           </p>
         </div>
 
-        {activeCustomer && (
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => {
-                setRepayingCustomer(activeCustomer);
-                setIsRepayModalOpen(true);
-              }}
-              className="px-4 py-2.5 bg-white text-red-800 hover:bg-rose-50 rounded-xl font-extrabold text-xs shadow-md transition-all"
-            >
-              Receive Repayment
-            </button>
-            <button
-              onClick={handlePrintStatement}
-              className="p-2.5 bg-red-900/60 hover:bg-red-900 text-white rounded-xl transition-all"
-              title="Print Customer Statement"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <button
+            onClick={() => {
+              setAdjustingCustomer(activeCustomer || null);
+              setIsAdjustModalOpen(true);
+            }}
+            className="px-3.5 py-2.5 bg-amber-400 hover:bg-amber-300 text-red-950 rounded-xl font-black text-xs shadow-md transition-all flex items-center gap-1.5 active:scale-95"
+            title="Update previous udhaar without needing a date"
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            <span>Update Previous Udhar (पिछला उधार)</span>
+          </button>
+
+          {activeCustomer && (
+            <>
+              <button
+                onClick={() => {
+                  setRepayingCustomer(activeCustomer);
+                  setIsRepayModalOpen(true);
+                }}
+                className="px-4 py-2.5 bg-white text-red-800 hover:bg-rose-50 rounded-xl font-extrabold text-xs shadow-md transition-all"
+              >
+                Receive Repayment
+              </button>
+              <button
+                onClick={handlePrintStatement}
+                className="p-2.5 bg-red-900/60 hover:bg-red-900 text-white rounded-xl transition-all"
+                title="Print Customer Statement"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Main Grid: Left List (Customers with Udhar) & Right Ledger Details */}
@@ -283,31 +302,42 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                         {activeCustomerHistory.map((entry) => {
-                          const isCredit = entry.type === 'credit_sale';
+                          const isCreditSale = entry.type === 'credit_sale';
+                          const isAdjustment = entry.type === 'adjustment';
+                          const isRepayment = entry.type === 'repayment';
+
                           return (
                             <tr key={entry.id}>
                               <td className="py-2 px-3 text-slate-500 whitespace-nowrap">
                                 {formatDate(entry.date)}
                               </td>
                               <td className="py-2 px-3">
-                                <span
-                                  className={`inline-block px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
-                                    isCredit
-                                      ? 'bg-red-100 text-red-800'
-                                      : 'bg-emerald-100 text-emerald-800'
-                                  }`}
-                                >
-                                  {isCredit ? 'Credit Sale' : 'Repayment'}
-                                </span>
+                                {isAdjustment ? (
+                                  <span className="inline-block px-1.5 py-0.5 rounded font-bold text-[9px] uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                    Previous Udhar / Adjust
+                                  </span>
+                                ) : isCreditSale ? (
+                                  <span className="inline-block px-1.5 py-0.5 rounded font-bold text-[9px] uppercase bg-red-100 text-red-800">
+                                    Credit Sale
+                                  </span>
+                                ) : (
+                                  <span className="inline-block px-1.5 py-0.5 rounded font-bold text-[9px] uppercase bg-emerald-100 text-emerald-800">
+                                    Repayment
+                                  </span>
+                                )}
                               </td>
                               <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
                                 {entry.notes || entry.invoiceNumber || '—'}
                               </td>
                               <td className="py-2 px-3 text-right font-bold text-red-600">
-                                {isCredit ? formatINR(entry.amount) : '—'}
+                                {isCreditSale || (isAdjustment && (entry.notes?.includes('+') || !entry.notes?.includes('-')))
+                                  ? formatINR(entry.amount)
+                                  : '—'}
                               </td>
                               <td className="py-2 px-3 text-right font-bold text-emerald-600">
-                                {!isCredit ? formatINR(entry.amount) : '—'}
+                                {isRepayment || (isAdjustment && entry.notes?.includes('-'))
+                                  ? formatINR(entry.amount)
+                                  : '—'}
                               </td>
                               <td className="py-2 px-3 text-right font-black font-mono">
                                 {formatINR(entry.balanceAfter)}
@@ -347,15 +377,29 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
                   </button>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setRepayingCustomer(activeCustomer);
-                    setIsRepayModalOpen(true);
-                  }}
-                  className="px-4 py-2 bg-kirana-700 hover:bg-kirana-800 text-white rounded-lg text-xs font-black shadow-sm"
-                >
-                  Receive Repayment
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setAdjustingCustomer(activeCustomer);
+                      setIsAdjustModalOpen(true);
+                    }}
+                    className="px-3.5 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold shadow-xs flex items-center gap-1"
+                    title="Update or add previous udhaar (no date required)"
+                  >
+                    <CreditCard className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Update Previous Udhar</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setRepayingCustomer(activeCustomer);
+                      setIsRepayModalOpen(true);
+                    }}
+                    className="px-4 py-2 bg-kirana-700 hover:bg-kirana-800 text-white rounded-lg text-xs font-black shadow-sm"
+                  >
+                    Receive Repayment
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
@@ -469,6 +513,20 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
           </div>
         </div>
       )}
+
+      {/* Update Previous Udhar Modal */}
+      <UpdatePreviousUdharModal
+        isOpen={isAdjustModalOpen}
+        onClose={() => {
+          setIsAdjustModalOpen(false);
+          setAdjustingCustomer(null);
+        }}
+        customer={adjustingCustomer}
+        customersList={customers}
+        onSuccess={(updated) => {
+          setSelectedCustomerId(updated.id!);
+        }}
+      />
     </div>
   );
 };

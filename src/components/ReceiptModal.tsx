@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Invoice, StoreSettings } from '../types';
-import { formatINR, formatDate, formatDateTime } from '../utils/formatters';
+import { formatINR, formatDate, formatDateTime, formatQuantityWithSubUnit } from '../utils/formatters';
 import { buildReceiptMessage, getWhatsAppClickUrl, getSmsClickUrl } from '../utils/notifications';
 import {
   X,
@@ -175,7 +175,9 @@ export const ReceiptModal: React.FC<Props> = ({
                     {invoice.items.map((item, idx) => (
                       <tr key={idx} className="border-b border-slate-100">
                         <td className="py-1 pr-1 font-semibold text-slate-800">{item.name}</td>
-                        <td className="py-1 text-center whitespace-nowrap">{item.quantity} {item.unit}</td>
+                        <td className="py-1 text-center whitespace-nowrap">
+                          {formatQuantityWithSubUnit(item.quantity, item.unit, item.subUnitLabel)}
+                        </td>
                         <td className="py-1 text-right">{formatINR(item.sellingPrice)}</td>
                         <td className="py-1 text-right font-medium">{formatINR(item.total)}</td>
                       </tr>
@@ -283,7 +285,9 @@ export const ReceiptModal: React.FC<Props> = ({
                       <tr key={index} className="border-b border-slate-100">
                         <td className="p-2 text-slate-400">{index + 1}</td>
                         <td className="p-2 font-medium text-slate-800">{item.name}</td>
-                        <td className="p-2 text-center">{item.quantity} {item.unit}</td>
+                        <td className="p-2 text-center whitespace-nowrap">
+                          {formatQuantityWithSubUnit(item.quantity, item.unit, item.subUnitLabel)}
+                        </td>
                         <td className="p-2 text-right">{formatINR(item.sellingPrice)}</td>
                         <td className="p-2 text-right font-semibold">{formatINR(item.total)}</td>
                       </tr>

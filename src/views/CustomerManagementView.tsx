@@ -14,6 +14,7 @@ import {
   getWhatsAppClickUrl,
   getSmsClickUrl
 } from '../utils/notifications';
+import { UpdatePreviousUdharModal } from '../components/UpdatePreviousUdharModal';
 import {
   Users,
   UserPlus,
@@ -66,6 +67,11 @@ export const CustomerManagementView: React.FC<Props> = ({
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
   const [formNotes, setFormNotes] = useState('');
+  const [formPreviousUdhar, setFormPreviousUdhar] = useState('');
+
+  // Update previous udhaar modal state
+  const [isUdharAdjustModalOpen, setIsUdharAdjustModalOpen] = useState(false);
+  const [udharAdjustCustomer, setUdharAdjustCustomer] = useState<Customer | null>(null);
 
   // Segment helpers
   const getCustomerSegment = (c: Customer) => {
@@ -116,6 +122,7 @@ export const CustomerManagementView: React.FC<Props> = ({
     setFormPhone('');
     setFormAddress('');
     setFormNotes('');
+    setFormPreviousUdhar('');
     setIsAddEditOpen(true);
   };
 
@@ -126,6 +133,7 @@ export const CustomerManagementView: React.FC<Props> = ({
     setFormPhone(c.phone);
     setFormAddress(c.address || '');
     setFormNotes(c.notes || '');
+    setFormPreviousUdhar(c.outstandingUdhar ? c.outstandingUdhar.toString() : '0');
     setIsAddEditOpen(true);
   };
 
@@ -150,15 +158,38 @@ export const CustomerManagementView: React.FC<Props> = ({
     }
 
     const now = new Date().toISOString();
+    const newUdhar = parseFloat(formPreviousUdhar) || 0;
 
     if (editingCustomer && editingCustomer.id) {
-      await db.customers.update(editingCustomer.id, {
-        name: formName.trim(),
-        phone: cleanPhone,
-        address: formAddress.trim(),
-        notes: formNotes.trim(),
-        updatedAt: now,
+      const oldUdhar = editingCustomer.outstandingUdhar || 0;
+      const diff = newUdhar - oldUdhar;
+
+      await db.transaction('rw', [db.customers, db.udharLedger], async () => {
+        await db.customers.update(editingCustomer.id!, {
+          name: formName.trim(),
+          phone: cleanPhone,
+          address: formAddress.trim(),
+          notes: formNotes.trim(),
+          outstandingUdhar: newUdhar,
+          updatedAt: now,
+        });
+
+        if (diff !== 0) {
+          await db.udharLedger.add({
+            customerId: editingCustomer.id!,
+            customerName: formName.trim(),
+            customerPhone: cleanPhone,
+            type: 'adjustment',
+            amount: Math.abs(diff),
+            balanceAfter: newUdhar,
+            notes: diff > 0
+              ? `Previous Udhar updated (+${formatINR(diff)} added) [Date not specified]`
+              : `Previous Udhar adjusted (-${formatINR(Math.abs(diff))} reduced) [Date not specified]`,
+            date: now,
+          });
+        }
       });
+
       if (selectedProfileCustomer?.id === editingCustomer.id) {
         const fresh = await db.customers.get(editingCustomer.id);
         setSelectedProfileCustomer(fresh || null);
@@ -171,12 +202,25 @@ export const CustomerManagementView: React.FC<Props> = ({
         registrationDate: now,
         purchaseCount: 0,
         totalSpending: 0,
-        outstandingUdhar: 0,
+        outstandingUdhar: newUdhar,
         communicationConsent: true,
         notes: formNotes.trim(),
         updatedAt: now,
       };
-      await db.customers.add(newCust as Customer);
+
+      const id = await db.customers.add(newCust as Customer);
+      if (newUdhar > 0) {
+        await db.udharLedger.add({
+          customerId: id,
+          customerName: newCust.name,
+          customerPhone: newCust.phone,
+          type: 'adjustment',
+          amount: newUdhar,
+          balanceAfter: newUdhar,
+          notes: 'Previous Udhar / पिछला बकाया (Old Balance - Date Unknown)',
+          date: now,
+        });
+      }
     }
 
     setIsAddEditOpen(false);
@@ -417,6 +461,16 @@ export const CustomerManagementView: React.FC<Props> = ({
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
+                          onClick={() => {
+                            setUdharAdjustCustomer(cust);
+                            setIsUdharAdjustModalOpen(true);
+                          }}
+                          className="p-1.5 text-amber-700 hover:bg-amber-50 dark:hover:bg-slate-700 rounded-lg"
+                          title="Update Previous Udhar (तारीख याद न हो तो भी)"
+                        >
+                          <CreditCard className="w-4 h-4 text-amber-600" />
+                        </button>
+                        <button
                           onClick={() => openEditModal(cust)}
                           className="p-1.5 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
                           title="Edit Customer"
@@ -501,6 +555,18 @@ export const CustomerManagementView: React.FC<Props> = ({
             {/* Actions Toolbar for Selected Customer */}
             <div className="p-3 px-5 border-b border-slate-100 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-800">
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setUdharAdjustCustomer(selectedProfileCustomer);
+                    setIsUdharAdjustModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-xs font-bold shadow-xs border border-amber-300"
+                  title="Update or add previous udhaar (no date needed)"
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-amber-700" />
+                  Update Previous Udhar
+                </button>
+
                 {selectedProfileCustomer.outstandingUdhar > 0 && (
                   <button
                     onClick={() => setIsRepaymentModalOpen(true)}
@@ -773,6 +839,27 @@ export const CustomerManagementView: React.FC<Props> = ({
               </div>
 
               <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Previous Udhar / पिछला उधार (₹)
+                  </label>
+                  <span className="text-[10px] text-slate-400">Optional</span>
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="0.00 (तारीख याद न हो तो भी भर सकते हैं)"
+                  value={formPreviousUdhar}
+                  onChange={(e) => setFormPreviousUdhar(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-bold"
+                />
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  💡 No date required. Records directly as old balance in Khata ledger.
+                </p>
+              </div>
+
+              <div className="space-y-1">
                 <label className="font-semibold text-slate-700 dark:text-slate-300">Notes / Preferences</label>
                 <textarea
                   rows={2}
@@ -802,6 +889,22 @@ export const CustomerManagementView: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* Update Previous Udhar Modal */}
+      <UpdatePreviousUdharModal
+        isOpen={isUdharAdjustModalOpen}
+        onClose={() => {
+          setIsUdharAdjustModalOpen(false);
+          setUdharAdjustCustomer(null);
+        }}
+        customer={udharAdjustCustomer}
+        customersList={customers}
+        onSuccess={(updated) => {
+          if (selectedProfileCustomer?.id === updated.id) {
+            setSelectedProfileCustomer(updated);
+          }
+        }}
+      />
     </div>
   );
 };
