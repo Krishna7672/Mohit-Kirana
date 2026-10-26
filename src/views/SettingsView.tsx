@@ -22,7 +22,13 @@ import {
   Info,
   Save,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Sparkles,
+  Smartphone,
+  Monitor,
+  HelpCircle,
+  FileText,
+  X
 } from 'lucide-react';
 
 interface Props {
@@ -45,6 +51,24 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
   // Security / PIN lock
   const [pinEnabled, setPinEnabled] = useState(settings.pinEnabled || false);
   const [ownerPin, setOwnerPin] = useState(settings.ownerPin || '');
+
+  // AI & Vision Scanner key
+  const [geminiApiKey, setGeminiApiKey] = useState(
+    settings.geminiApiKey || localStorage.getItem('kirana_gemini_api_key') || ''
+  );
+
+  // POS System Number / Terminal Tagging
+  const [posTerminalName, setPosTerminalName] = useState(
+    settings.posTerminalName || localStorage.getItem('kirana_pos_terminal') || 'POS-1'
+  );
+
+  // Mobile layout toggle
+  const [forceMobileLayout, setForceMobileLayout] = useState(
+    settings.forceMobileLayout ?? (localStorage.getItem('kirana_force_mobile_layout') === 'true')
+  );
+
+  // Multi-Device Access Guide Modal
+  const [showDeviceGuideModal, setShowDeviceGuideModal] = useState(false);
 
   // Status notification
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -69,12 +93,51 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
       thermalWidth,
       pinEnabled,
       ownerPin: ownerPin.trim(),
+      geminiApiKey: geminiApiKey.trim(),
+      posTerminalName: posTerminalName.trim() || 'POS-1',
+      forceMobileLayout,
     };
+
+    localStorage.setItem('kirana_gemini_api_key', geminiApiKey.trim());
+    localStorage.setItem('kirana_pos_terminal', posTerminalName.trim() || 'POS-1');
+    localStorage.setItem('kirana_force_mobile_layout', String(forceMobileLayout));
 
     await db.storeSettings.put(updated);
     onSettingsUpdated(updated);
-    setSaveMessage('Settings updated successfully!');
+    setSaveMessage('Settings & Terminal details updated successfully!');
     setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  // Download Store Profile Details
+  const handleDownloadProfileDetails = () => {
+    const profileText = `
+======================================================
+           MOHIT KIRANA STORE PROFILE & POS
+======================================================
+Store Name      : ${shopName || 'Mohit Kirana'}
+Tagline         : ${tagline || 'Aapki Apni Kirana Dukan'}
+Owner Name      : ${ownerName || 'Mohit Kumar'}
+Contact Mobile  : ${phone || 'Not Specified'}
+Store Address   : ${address || 'Not Specified'}
+GSTIN Number    : ${gstin || 'Not Registered'}
+UPI Payment ID  : ${upiId || 'Not Configured'}
+POS Terminal ID : ${posTerminalName || 'POS-1'}
+Receipt Note    : ${receiptFooter || 'Dhanyawad! Please visit again.'}
+======================================================
+Generated Date  : ${new Date().toLocaleString()}
+Application     : Mohit Kirana Smart POS & Retail
+Developer       : This app made by Nahata Software's
+======================================================
+`;
+    const blob = new Blob([profileText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${shopName.replace(/\s+/g, '_')}_profile.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Full JSON Database Backup Download
@@ -266,7 +329,72 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-mono"
               />
             </div>
+
+            {/* POS System Terminal ID */}
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>POS System Number / Device Name</span>
+                <span className="text-[10px] text-kirana-600 font-bold">Multi-Device Tag</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. POS-1, POS-2, Counter-1, Mobile-2"
+                value={posTerminalName}
+                onChange={(e) => setPosTerminalName(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-mono font-bold text-kirana-700 dark:text-kirana-400"
+              />
+              <p className="text-[10px] text-slate-400">
+                When using multiple phones or computers, products scanned and bills generated will display &quot;Entry by: {posTerminalName || 'POS-1'}&quot;.
+              </p>
+            </div>
           </div>
+
+          <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={handleDownloadProfileDetails}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5 text-kirana-600" />
+              <span>Download Store Profile Summary</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowDeviceGuideModal(true)}
+              className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+              <span>How to Access on Another Device / Phone?</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Display & Layout Settings (Mobile Toggle) */}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-700">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-kirana-600" />
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                Display & Mobile Layout Toggle
+              </h3>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={forceMobileLayout}
+                onChange={(e) => setForceMobileLayout(e.target.checked)}
+                className="w-4 h-4 rounded text-kirana-600 focus:ring-kirana-500"
+              />
+              <span>Force Handheld Mobile Layout</span>
+            </label>
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {forceMobileLayout
+              ? 'Active: App is constrained to a compact, handheld mobile phone layout with bottom navigation — optimal for mobile phones, tablets, or touch billing counters.'
+              : 'Default: Responsive desktop layout adapts automatically to screen size.'}
+          </p>
         </div>
 
         {/* Receipt & Thermal Printer Settings */}
@@ -349,6 +477,45 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
               </div>
             </div>
           )}
+        </div>
+
+        {/* AI & Product Packaging Scanner Settings */}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 border-b pb-3 border-slate-100 dark:border-slate-700">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+              Whole Product AI Packaging Scanner
+            </h3>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1">
+              <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Offline Tesseract OCR Engine (Always Active)</span>
+              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Runs 100% locally on your device without internet. Extracts product text, MRP, net quantity, unit and barcodes using smart Kirana pattern recognition and Master Catalog matching.
+              </p>
+            </div>
+
+            <div className="space-y-1 pt-1">
+              <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>Google Gemini Vision API Key (Optional)</span>
+                <span className="text-[10px] text-kirana-600 font-bold">For 99.9% High Accuracy Extraction</span>
+              </label>
+              <input
+                type="password"
+                placeholder="Paste Gemini API Key (e.g. AIzaSy...)"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-mono text-xs"
+              />
+              <p className="text-[11px] text-slate-400">
+                If provided, packaging photos are analyzed with Gemini 2.5 Flash Vision to instantly read Hindi & English product names, MRP price, brand and net weight. Leave blank to use offline mode.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Save Button */}
@@ -472,6 +639,100 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
           </button>
         </div>
       </div>
+
+      {/* Footer Credit & Nahata Software's Attribution */}
+      <div className="pt-6 pb-4 text-center border-t border-slate-200 dark:border-slate-800 space-y-2">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800/80 rounded-full text-xs font-bold text-slate-700 dark:text-slate-300 shadow-xs border border-slate-200 dark:border-slate-700">
+          <Sparkles className="w-4 h-4 text-kirana-600 animate-pulse" />
+          <span>This app made by Nahata Software&apos;s</span>
+        </div>
+        <p className="text-[11px] text-slate-400 font-medium">
+          Mohit Kirana POS &bull; Version 2.0 &bull; Built with pride for Indian Kirana &amp; Retail Stores
+        </p>
+      </div>
+
+      {/* Multi-Device Sync & Access Guide Modal */}
+      {showDeviceGuideModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 max-h-[90vh] overflow-y-auto space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-700">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-kirana-50 dark:bg-kirana-950/50 rounded-xl text-kirana-700 dark:text-kirana-300">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                    How to Access &amp; Sync Data on Another Device
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Run Mohit Kirana across phone, tablet, and PC counters
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeviceGuideModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+              <div className="p-3.5 bg-kirana-50 dark:bg-kirana-950/40 border border-kirana-200 dark:border-kirana-800/60 rounded-2xl space-y-1">
+                <p className="font-bold text-kirana-900 dark:text-kirana-200 text-sm">
+                  100% Privacy &amp; Zero Cloud Lock-In:
+                </p>
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Your store&apos;s inventory, udhar khata, and sales are kept securely inside your device storage (IndexedDB) for lightning-fast offline operation even when internet is completely down.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 space-y-1.5">
+                  <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs">
+                    <span className="w-5 h-5 rounded-full bg-kirana-700 text-white inline-flex items-center justify-center text-[10px]">1</span>
+                    Method 1: Instant WhatsApp / File Backup Transfer
+                  </h4>
+                  <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                    On this primary device, click <strong>&quot;Export JSON Backup&quot;</strong> in Settings. Send the downloaded <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[11px]">.json</code> file to your other phone/laptop via WhatsApp, Bluetooth, or Email. Open Mohit Kirana on the second device and click <strong>&quot;Restore from File&quot;</strong>. All products, customers, and history appear immediately!
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 space-y-1.5">
+                  <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs">
+                    <span className="w-5 h-5 rounded-full bg-kirana-700 text-white inline-flex items-center justify-center text-[10px]">2</span>
+                    Method 2: Multi-Counter Wi-Fi Access (Live Same Shop)
+                  </h4>
+                  <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Connect both your main PC/laptop and mobile phone to the same shop Wi-Fi / Mobile Hotspot. Run <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[11px]">npm run dev -- --host</code> on the host PC. Open Chrome on your phone and browse to <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[11px]">http://[PC-Local-IP]:5173</code> to scan and bill concurrently!
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 space-y-1.5">
+                  <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs">
+                    <span className="w-5 h-5 rounded-full bg-kirana-700 text-white inline-flex items-center justify-center text-[10px]">3</span>
+                    POS Terminal Labeling (POS-1, POS-2)
+                  </h4>
+                  <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Set this device as <strong>POS-1 (Main Counter)</strong> and your second mobile as <strong>POS-2 (Mobile Scanner)</strong> using the POS System Terminal field above. Every scan, stock addition, and receipt will clearly log <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded text-[11px]">Entry by: POS-2</code>!
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDeviceGuideModal(false)}
+                className="px-5 py-2.5 bg-kirana-700 hover:bg-kirana-800 text-white font-bold rounded-xl text-xs transition-all active:scale-98"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

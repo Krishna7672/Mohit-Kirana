@@ -12,13 +12,13 @@ import type {
 } from '../types';
 import {
   formatINR,
-  generateInvoiceNumber,
-  formatDate
+  generateInvoiceNumber
 } from '../utils/formatters';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
+import type { ExtractedProductDetails } from '../utils/productOcr';
 import {
   Search,
-  Camera,
+  Barcode,
   Trash2,
   Plus,
   Minus,
@@ -49,6 +49,7 @@ interface Props {
 }
 
 export const POSBillingView: React.FC<Props> = ({
+  settings,
   onOpenReceipt,
   preselectedCustomerId
 }) => {
@@ -61,6 +62,7 @@ export const POSBillingView: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerInitialTab, setScannerInitialTab] = useState<'product' | 'barcode'>('product');
 
   // Mobile layout tab switcher ('catalog' vs 'cart')
   const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
@@ -75,6 +77,9 @@ export const POSBillingView: React.FC<Props> = ({
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustAddress, setNewCustAddress] = useState('');
+
+  // Walk-in customer name (optional)
+  const [walkInName, setWalkInName] = useState('');
 
   // Store discount
   const [overallDiscount, setOverallDiscount] = useState<number>(0);
@@ -236,6 +241,78 @@ export const POSBillingView: React.FC<Props> = ({
     }
   };
 
+  // Whole Product AI Details Extracted Handler
+  const handleProductExtracted = async (extracted: ExtractedProductDetails) => {
+    // 1. Try to find existing product in store by barcode, sku, or similar name
+    let match = products.find(
+      (p) =>
+        (extracted.barcode && p.barcode === extracted.barcode) ||
+        (extracted.barcode && p.sku.toLowerCase() === extracted.barcode.toLowerCase()) ||
+        p.name.toLowerCase() === extracted.name.toLowerCase()
+    );
+
+    if (match) {
+      addToCart(match, 1);
+      setNotification({
+        type: 'success',
+        message: `✨ Identified "${match.name}" (₹${match.sellingPrice}) and added to bill!`,
+      });
+      setTimeout(() => setNotification(null), 3500);
+      return;
+    }
+
+    // 2. If it's a new product not yet in inventory, auto-register it directly
+    const sellingPrice = extracted.price || 10;
+    const purchasePrice = extracted.purchasePrice || Math.round(sellingPrice * 0.85);
+    const now = new Date().toISOString();
+
+    const currentTerminal = settings?.posTerminalName || localStorage.getItem('kirana_pos_terminal') || 'POS-1';
+    const newProd: Omit<Product, 'id'> = {
+      name: extracted.name,
+      category: extracted.category || 'General Grocery',
+      brand: extracted.brand || 'Generic',
+      sku: extracted.barcode ? `SKU-${extracted.barcode.slice(-6)}` : `SKU-${Date.now().toString().slice(-6)}`,
+      barcode: extracted.barcode || `AUTO-${Date.now().toString().slice(-6)}`,
+      unit: extracted.unit || 'packet',
+      purchasePrice,
+      sellingPrice,
+      stockQuantity: 20, // default initial stock
+      minStockThreshold: 5,
+      supplierName: 'Scanned In-Store',
+      expiryDate: extracted.expiryDate || '',
+      addedByTerminal: currentTerminal,
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    try {
+      const newId = await db.products.add(newProd as Product);
+      const createdProd = { ...newProd, id: newId } as Product;
+
+      await db.stockMovements.add({
+        productId: newId,
+        productName: createdProd.name,
+        type: 'manual_in',
+        quantityChange: 20,
+        quantityAfter: 20,
+        reason: `Auto-added from Whole Product AI camera scan (${currentTerminal})`,
+        posTerminalName: currentTerminal,
+        date: now,
+      });
+
+      addToCart(createdProd, 1);
+      setNotification({
+        type: 'success',
+        message: `🎉 Saved "${createdProd.name}" (₹${sellingPrice}) to store & added to bill!`,
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } catch (err) {
+      console.error('Failed to auto-add scanned product:', err);
+      alert(`Could not save product: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   // Repeat Previous Bill handler
   const handleRepeatPreviousBill = () => {
     if (!lastCustomerInvoice) return;
@@ -394,6 +471,7 @@ export const POSBillingView: React.FC<Props> = ({
         }
       }
 
+      const currentTerminal = settings?.posTerminalName || localStorage.getItem('kirana_pos_terminal') || 'POS-1';
       let createdInvoice: Invoice | null = null;
 
       // Execute atomic transaction across all related tables
@@ -405,12 +483,20 @@ export const POSBillingView: React.FC<Props> = ({
         db.udharLedger,
       ], async () => {
         // 1. Create Invoice Record
+        const finalCustomerName = selectedCustomer
+          ? selectedCustomer.name
+          : walkInName.trim()
+          ? `${walkInName.trim()} (Walk-in)`
+          : 'Walk-in Customer';
+
         const invoiceData: Omit<Invoice, 'id'> = {
           invoiceNumber,
           date: now,
           customerId: selectedCustomer?.id || null,
-          customerName: selectedCustomer?.name || 'Walk-in Customer',
+          customerName: finalCustomerName,
           customerPhone: selectedCustomer?.phone || '',
+          walkInCustomerName: walkInName.trim() || undefined,
+          posTerminalName: currentTerminal,
           items: cart.map((c) => ({
             productId: c.product.id!,
             name: c.product.name,
@@ -454,7 +540,8 @@ export const POSBillingView: React.FC<Props> = ({
               quantityChange: -item.quantity,
               quantityAfter: newStock,
               referenceId: invoiceNumber,
-              reason: `Sold in Bill #${invoiceNumber}`,
+              reason: `Sold in Bill #${invoiceNumber} (${currentTerminal})`,
+              posTerminalName: currentTerminal,
               date: now,
             });
           }
@@ -508,6 +595,7 @@ export const POSBillingView: React.FC<Props> = ({
       setCashTendered('');
       setSplitPaidAmount('');
       setNotes('');
+      setWalkInName('');
       setPaymentMethod('cash');
 
       setNotification({
@@ -576,7 +664,27 @@ export const POSBillingView: React.FC<Props> = ({
                     )}
                   </>
                 ) : (
-                  <span>Cash / Instant Payment • No Khata Record</span>
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] text-slate-500">Cash / Instant Payment • No Khata Record</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="Add Walk-in Customer Name (Optional)"
+                        value={walkInName}
+                        onChange={(e) => setWalkInName(e.target.value)}
+                        className="px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-kirana-500 w-56 sm:w-64"
+                      />
+                      {walkInName && (
+                        <button
+                          type="button"
+                          onClick={() => setWalkInName('')}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 px-1"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -723,14 +831,30 @@ export const POSBillingView: React.FC<Props> = ({
                 )}
               </div>
 
-              {/* Camera Barcode Scanner Button */}
+              {/* AI Whole Product Scan Button */}
               <button
-                onClick={() => setIsScannerOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-kirana-700 hover:bg-kirana-800 text-white rounded-xl text-xs font-bold shadow-sm transition-all shrink-0 active:scale-95"
+                onClick={() => {
+                  setScannerInitialTab('product');
+                  setIsScannerOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-kirana-600 hover:bg-kirana-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all shrink-0 active:scale-95"
+                title="Scan whole product packet with AI to extract details"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+                <span className="hidden sm:inline">AI Product Scan</span>
+              </button>
+
+              {/* Barcode Scanner Button */}
+              <button
+                onClick={() => {
+                  setScannerInitialTab('barcode');
+                  setIsScannerOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-600 shadow-sm transition-all shrink-0 active:scale-95"
                 title="Scan barcode with camera"
               >
-                <Camera className="w-4 h-4" />
-                <span className="hidden sm:inline">Scan Barcode</span>
+                <Barcode className="w-4 h-4" />
+                <span className="hidden md:inline">Barcode</span>
               </button>
             </div>
 
@@ -1289,11 +1413,14 @@ export const POSBillingView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* 7. BARCODE CAMERA SCANNER MODAL */}
+      {/* 7. BARCODE & WHOLE PRODUCT CAMERA SCANNER MODAL */}
       <BarcodeScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleBarcodeScanned}
+        onProductExtracted={handleProductExtracted}
+        initialTab={scannerInitialTab}
+        defaultGeminiApiKey={settings?.geminiApiKey}
       />
     </div>
   );

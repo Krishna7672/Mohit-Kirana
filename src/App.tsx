@@ -113,135 +113,148 @@ export function App() {
     }
   };
 
+  const isForcedMobile = Boolean(settings.forceMobileLayout);
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col lg:flex-row antialiased">
-      {/* Navigation (Sidebar on Desktop, Bottom bar on mobile) */}
-      <Navigation
-        activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-          setOpenProductModalOnNav(false);
-          setOpenCustomerModalOnNav(false);
-        }}
-        shopName={settings.shopName}
-        isDarkMode={isDarkMode}
-        setIsDarkMode={setIsDarkMode}
-        onLockApp={() => setIsAppLocked(true)}
-        isPinConfigured={Boolean(settings.pinEnabled && settings.ownerPin)}
-        lowStockCount={lowStockCount}
-        totalUdhar={totalUdhar}
-        onTriggerSync={handleTriggerSync}
-        isSyncing={isSyncing}
-      />
+    <div className={`min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased ${
+      isForcedMobile
+        ? 'flex justify-center p-0 sm:py-4'
+        : 'flex flex-col lg:flex-row'
+    }`}>
+      <div className={`w-full min-h-screen flex ${
+        isForcedMobile
+          ? 'max-w-md bg-slate-50 dark:bg-slate-900 shadow-2xl border-x border-slate-200 dark:border-slate-800 flex-col relative pb-16'
+          : 'flex-col lg:flex-row'
+      }`}>
+        {/* Navigation (Sidebar on Desktop, Bottom bar on mobile) */}
+        <Navigation
+          activeTab={activeTab}
+          setActiveTab={(tab) => {
+            setActiveTab(tab);
+            setOpenProductModalOnNav(false);
+            setOpenCustomerModalOnNav(false);
+          }}
+          shopName={settings.shopName}
+          isDarkMode={isDarkMode}
+          setIsDarkMode={setIsDarkMode}
+          onLockApp={() => setIsAppLocked(true)}
+          isPinConfigured={Boolean(settings.pinEnabled && settings.ownerPin)}
+          lowStockCount={lowStockCount}
+          totalUdhar={totalUdhar}
+          onTriggerSync={handleTriggerSync}
+          isSyncing={isSyncing}
+          forceMobileLayout={isForcedMobile}
+        />
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden pt-16 lg:pt-0">
-        {/* Sync Status Banner */}
-        {syncStatus && (
-          <div className="no-print bg-emerald-600 text-white px-4 py-2 flex items-center justify-between text-xs font-semibold shadow-md animate-in fade-in duration-150">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
-              <span>{syncStatus}</span>
-            </div>
-            <button
-              onClick={() => setSyncStatus(null)}
-              className="p-1 text-emerald-200 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* PWA Install Banner */}
-        {showInstallBanner && (
-          <div className="no-print bg-kirana-800 text-white px-4 py-2.5 flex items-center justify-between text-xs font-medium shadow-md">
-            <div className="flex items-center gap-2">
-              <DownloadCloud className="w-4 h-4 text-emerald-300 shrink-0" />
-              <span>Install <strong>Mohit Kirana</strong> app for 1-tap offline desktop/mobile access!</span>
-            </div>
-            <div className="flex items-center gap-2">
+        {/* Main Content Area */}
+        <main className={`flex-1 flex flex-col min-w-0 overflow-x-hidden ${isForcedMobile ? 'pt-14' : 'pt-16 lg:pt-0'}`}>
+          {/* Sync Status Banner */}
+          {syncStatus && (
+            <div className="no-print bg-emerald-600 text-white px-4 py-2 flex items-center justify-between text-xs font-semibold shadow-md animate-in fade-in duration-150">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
+                <span>{syncStatus}</span>
+              </div>
               <button
-                onClick={handlePwaInstall}
-                className="px-3 py-1 bg-white text-kirana-900 rounded-lg font-bold text-[11px] shadow-sm hover:bg-kirana-50"
-              >
-                Install App
-              </button>
-              <button
-                onClick={() => setShowInstallBanner(false)}
-                className="p-1 text-kirana-200 hover:text-white"
+                onClick={() => setSyncStatus(null)}
+                className="p-1 text-emerald-200 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
+          )}
+
+          {/* PWA Install Banner */}
+          {showInstallBanner && (
+            <div className="no-print bg-kirana-800 text-white px-4 py-2.5 flex items-center justify-between text-xs font-medium shadow-md">
+              <div className="flex items-center gap-2">
+                <DownloadCloud className="w-4 h-4 text-emerald-300 shrink-0" />
+                <span>Install <strong>Mohit Kirana</strong> app for 1-tap offline desktop/mobile access!</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePwaInstall}
+                  className="px-3 py-1 bg-white text-kirana-900 rounded-lg font-bold text-[11px] shadow-sm hover:bg-kirana-50"
+                >
+                  Install App
+                </button>
+                <button
+                  onClick={() => setShowInstallBanner(false)}
+                  className="p-1 text-kirana-200 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tab Views */}
+          <div className={`flex-1 w-full mx-auto ${isForcedMobile ? 'p-3' : 'p-4 sm:p-6 lg:p-8 max-w-7xl'}`}>
+            {activeTab === 'dashboard' && (
+              <DashboardView
+                setActiveTab={setActiveTab}
+                onOpenReceipt={handleOpenReceipt}
+                onQuickNewProduct={() => {
+                  setOpenProductModalOnNav(true);
+                  setActiveTab('inventory');
+                }}
+                onQuickNewCustomer={() => {
+                  setOpenCustomerModalOnNav(true);
+                  setActiveTab('customers');
+                }}
+                settings={settings}
+              />
+            )}
+
+            {activeTab === 'pos' && (
+              <POSBillingView
+                settings={settings}
+                onOpenReceipt={handleOpenReceipt}
+                preselectedCustomerId={posPreselectedCustomerId}
+              />
+            )}
+
+            {activeTab === 'inventory' && (
+              <InventoryView
+                settings={settings}
+                openNewProductModalOnMount={openProductModalOnNav}
+              />
+            )}
+
+            {activeTab === 'customers' && (
+              <CustomerManagementView
+                settings={settings}
+                onOpenReceipt={handleOpenReceipt}
+                onStartPosWithCustomer={(customerId) => {
+                  setPosPreselectedCustomerId(customerId);
+                  setActiveTab('pos');
+                }}
+                openNewCustomerModalOnMount={openCustomerModalOnNav}
+              />
+            )}
+
+            {activeTab === 'udhar' && <UdharKhataView settings={settings} />}
+
+            {activeTab === 'purchases' && <PurchasesView settings={settings} />}
+
+            {activeTab === 'reports' && (
+              <ReportsView
+                settings={settings}
+                onOpenReceipt={handleOpenReceipt}
+              />
+            )}
+
+            {activeTab === 'settings' && (
+              <SettingsView
+                settings={settings}
+                onSettingsUpdated={(newSet) => {
+                  // Settings auto-update via Dexie live query
+                }}
+              />
+            )}
           </div>
-        )}
-
-        {/* Tab Views */}
-        <div className="p-4 sm:p-6 lg:p-8 flex-1 max-w-7xl w-full mx-auto">
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              setActiveTab={setActiveTab}
-              onOpenReceipt={handleOpenReceipt}
-              onQuickNewProduct={() => {
-                setOpenProductModalOnNav(true);
-                setActiveTab('inventory');
-              }}
-              onQuickNewCustomer={() => {
-                setOpenCustomerModalOnNav(true);
-                setActiveTab('customers');
-              }}
-              settings={settings}
-            />
-          )}
-
-          {activeTab === 'pos' && (
-            <POSBillingView
-              settings={settings}
-              onOpenReceipt={handleOpenReceipt}
-              preselectedCustomerId={posPreselectedCustomerId}
-            />
-          )}
-
-          {activeTab === 'inventory' && (
-            <InventoryView
-              settings={settings}
-              openNewProductModalOnMount={openProductModalOnNav}
-            />
-          )}
-
-          {activeTab === 'customers' && (
-            <CustomerManagementView
-              settings={settings}
-              onOpenReceipt={handleOpenReceipt}
-              onStartPosWithCustomer={(customerId) => {
-                setPosPreselectedCustomerId(customerId);
-                setActiveTab('pos');
-              }}
-              openNewCustomerModalOnMount={openCustomerModalOnNav}
-            />
-          )}
-
-          {activeTab === 'udhar' && <UdharKhataView settings={settings} />}
-
-          {activeTab === 'purchases' && <PurchasesView settings={settings} />}
-
-          {activeTab === 'reports' && (
-            <ReportsView
-              settings={settings}
-              onOpenReceipt={handleOpenReceipt}
-            />
-          )}
-
-          {activeTab === 'settings' && (
-            <SettingsView
-              settings={settings}
-              onSettingsUpdated={(newSet) => {
-                // Settings auto-update via Dexie live query
-              }}
-            />
-          )}
-        </div>
-      </main>
+        </main>
+      </div>
 
       {/* Global Receipt Print / Share Modal */}
       <ReceiptModal

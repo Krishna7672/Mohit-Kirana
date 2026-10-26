@@ -5,12 +5,14 @@ import type { Product, UnitType, StoreSettings } from '../types';
 import { formatINR, formatDate } from '../utils/formatters';
 import { exportProductsCSV, parseProductsCSV } from '../utils/csv';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
+import type { ExtractedProductDetails } from '../utils/productOcr';
 import { MASTER_GROCERY_CATALOG, type CatalogItem } from '../data/masterCatalog';
 import {
   Package,
   Plus,
   Search,
   Camera,
+  Barcode,
   Download,
   Upload,
   History,
@@ -34,7 +36,7 @@ interface Props {
   openNewProductModalOnMount?: boolean;
 }
 
-export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) => {
+export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOnMount }) => {
   const products = useLiveQuery(() => db.products.toArray()) || [];
   const stockMovements = useLiveQuery(() => db.stockMovements.reverse().limit(50).toArray()) || [];
 
@@ -46,6 +48,7 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
   // Scanner state
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannerTarget, setScannerTarget] = useState<'inventorySearch' | 'formBarcode'>('inventorySearch');
+  const [scannerInitialTab, setScannerInitialTab] = useState<'product' | 'barcode'>('product');
 
   // Modals state
   const [isAddEditOpen, setIsAddEditOpen] = useState(openNewProductModalOnMount || false);
@@ -137,6 +140,67 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
     setIsAddEditOpen(true);
   };
 
+  // List of all previous and catalog products for autocomplete dropdown
+  const allKnownProducts = useMemo(() => {
+    const map = new Map<string, { name: string; brand: string; category: string; unit: UnitType; purchasePrice?: number; sellingPrice?: number; barcode?: string }>();
+    
+    // Existing store products
+    products.forEach((p) => {
+      if (p.name) {
+        map.set(p.name.trim(), {
+          name: p.name.trim(),
+          brand: p.brand || '',
+          category: p.category || 'General',
+          unit: p.unit,
+          purchasePrice: p.purchasePrice,
+          sellingPrice: p.sellingPrice,
+          barcode: p.barcode,
+        });
+      }
+    });
+
+    // Master Catalog items
+    MASTER_GROCERY_CATALOG.forEach((c) => {
+      if (c.name && !map.has(c.name.trim())) {
+        map.set(c.name.trim(), {
+          name: c.name.trim(),
+          brand: c.brand || '',
+          category: c.category || 'General',
+          unit: c.unit,
+          purchasePrice: c.typicalPurchasePrice,
+          sellingPrice: c.typicalSellingPrice,
+          barcode: c.barcode,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [products]);
+
+  // Handle Name input change with auto-fill when selecting known product
+  const handleNameInputChange = (val: string) => {
+    setFormName(val);
+    if (!val.trim()) return;
+
+    const matched = allKnownProducts.find(
+      (p) => p.name.toLowerCase() === val.trim().toLowerCase()
+    );
+
+    if (matched && (!formBrand || !formSellingPrice)) {
+      if (matched.brand) setFormBrand(matched.brand);
+      if (matched.category) setFormCategory(matched.category);
+      if (matched.unit) setFormUnit(matched.unit);
+      if (matched.sellingPrice && !formSellingPrice) setFormSellingPrice(matched.sellingPrice.toString());
+      if (matched.purchasePrice && !formPurchasePrice) setFormPurchasePrice(matched.purchasePrice.toString());
+      if (matched.barcode && !formBarcode) {
+        setFormBarcode(matched.barcode);
+        setFormSku(`SKU-${matched.barcode.slice(-6)}`);
+      }
+      setAutoFillNotice(`✨ Auto-filled details for "${matched.name}" from previous product records!`);
+      setTimeout(() => setAutoFillNotice(null), 3500);
+    }
+  };
+
   // Check barcode against catalog during typing
   const handleBarcodeChange = (code: string) => {
     setFormBarcode(code);
@@ -161,6 +225,8 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
     const stockQty = parseFloat(formStockQuantity) || 0;
     const minThreshold = parseFloat(formMinThreshold) || 5;
     const now = new Date().toISOString();
+
+    const currentTerminal = settings?.posTerminalName || localStorage.getItem('kirana_pos_terminal') || 'POS-1';
 
     if (editingProduct && editingProduct.id) {
       // Update
@@ -189,7 +255,8 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
           type: stockQty > prevQty ? 'manual_in' : 'manual_out',
           quantityChange: stockQty - prevQty,
           quantityAfter: stockQty,
-          reason: 'Manual stock adjustment during product edit',
+          reason: `Manual stock adjustment during product edit (${currentTerminal})`,
+          posTerminalName: currentTerminal,
           date: now,
         });
       }
@@ -208,6 +275,7 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
         minStockThreshold: minThreshold,
         supplierName: formSupplierName.trim(),
         expiryDate: formExpiryDate.trim(),
+        addedByTerminal: currentTerminal,
         isArchived: false,
         createdAt: now,
         updatedAt: now,
@@ -223,7 +291,8 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
           type: 'manual_in',
           quantityChange: stockQty,
           quantityAfter: stockQty,
-          reason: 'Initial added stock',
+          reason: `Initial added stock (${currentTerminal})`,
+          posTerminalName: currentTerminal,
           date: now,
         });
       }
@@ -420,6 +489,54 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
     }
   };
 
+  // Whole Product AI Details Extracted Handler
+  const handleProductExtracted = (extracted: ExtractedProductDetails) => {
+    // If an existing product already has this barcode or exact name, ask user if they want to edit it
+    const existing = products.find(
+      (p) =>
+        (extracted.barcode && p.barcode === extracted.barcode) ||
+        p.name.toLowerCase() === extracted.name.toLowerCase()
+    );
+
+    if (existing) {
+      openEditModal(existing);
+      setAutoFillNotice(`Found existing store item "${existing.name}". Updated with fresh scan details!`);
+    } else {
+      openNewModal();
+    }
+
+    // Populate all form fields with extracted data
+    setFormName(extracted.name);
+    setFormBrand(extracted.brand);
+    setFormCategory(extracted.category || 'General Grocery');
+    setFormUnit(extracted.unit);
+    
+    if (extracted.price) {
+      setFormSellingPrice(extracted.price.toString());
+    }
+    if (extracted.purchasePrice) {
+      setFormPurchasePrice(extracted.purchasePrice.toString());
+    } else if (extracted.price) {
+      setFormPurchasePrice(Math.round(extracted.price * 0.85).toString());
+    }
+    
+    if (extracted.barcode) {
+      setFormBarcode(extracted.barcode);
+      setFormSku(`SKU-${extracted.barcode.slice(-6)}`);
+    }
+
+    if (extracted.expiryDate) {
+      setFormExpiryDate(extracted.expiryDate);
+    }
+
+    if (!formStockQuantity || formStockQuantity === '0') {
+      setFormStockQuantity('15');
+    }
+
+    setAutoFillNotice(`✨ Auto-extracted details for "${extracted.name}" from packaging scan!`);
+    setTimeout(() => setAutoFillNotice(null), 5000);
+  };
+
   // Categories list
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -532,12 +649,26 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* AI Scan Whole Product Button */}
+          <button
+            onClick={() => {
+              setScannerTarget('formBarcode');
+              setScannerInitialTab('product');
+              setIsScannerOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-kirana-600 to-emerald-600 hover:from-kirana-700 hover:to-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-kirana-700/20 transition-all active:scale-95"
+            title="Scan whole product packet with camera and extract details"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+            <span>AI Product Scan</span>
+          </button>
+
           {/* MASTER CATALOG QUICK ADD BUTTON */}
           <button
             onClick={() => setIsCatalogModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-kirana-700 to-emerald-600 hover:from-kirana-800 hover:to-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-kirana-700/20 transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
           >
-            <Sparkles className="w-4 h-4 text-yellow-300" />
+            <BookOpen className="w-4 h-4 text-emerald-400" />
             <span>Master Catalog (60+)</span>
           </button>
 
@@ -645,17 +776,32 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
             )}
           </div>
 
+          {/* AI Scan Whole Product Button */}
+          <button
+            onClick={() => {
+              setScannerTarget('formBarcode');
+              setScannerInitialTab('product');
+              setIsScannerOpen(true);
+            }}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-kirana-600 hover:bg-kirana-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm active:scale-95 transition-all"
+            title="Scan whole packet with AI to extract details"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+            <span>AI Product Scan</span>
+          </button>
+
           {/* Barcode Scanner Button */}
           <button
             onClick={() => {
               setScannerTarget('inventorySearch');
+              setScannerInitialTab('barcode');
               setIsScannerOpen(true);
             }}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-kirana-700 hover:bg-kirana-800 text-white rounded-xl text-xs font-bold shrink-0 shadow-sm active:scale-95"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-medium shrink-0 border border-slate-200 dark:border-slate-600 shadow-sm active:scale-95 transition-all"
             title="Scan product barcode with camera"
           >
-            <Camera className="w-4 h-4" />
-            <span>Scan Product Barcode</span>
+            <Barcode className="w-4 h-4" />
+            <span>Barcode</span>
           </button>
         </div>
 
@@ -732,9 +878,14 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
                     >
                       <td className="py-3 px-4">
                         <div className="font-bold text-slate-900 dark:text-white">{p.name}</div>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5 flex-wrap">
                           {p.brand && <span className="font-sans font-medium text-slate-500">{p.brand}</span>}
                           {p.barcode && <span>• Barcode: {p.barcode}</span>}
+                          {p.addedByTerminal && (
+                            <span className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                              Entry by: {p.addedByTerminal}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -989,21 +1140,61 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
               </div>
             )}
 
+            {/* Quick Auto-Fill by Scanning Whole Product Banner */}
+            <div className="m-4 mb-0 p-3 bg-gradient-to-r from-kirana-50 to-emerald-50 dark:from-slate-800 dark:to-emerald-950/30 border border-kirana-200 dark:border-emerald-800/50 rounded-2xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-kirana-600 text-white rounded-xl shadow-xs">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">Auto-Fill by Scanning Product Packaging</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Snap a photo of packet to extract name, MRP, weight & barcode automatically</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setScannerTarget('formBarcode');
+                  setScannerInitialTab('product');
+                  setIsScannerOpen(true);
+                }}
+                className="px-3 py-1.5 bg-kirana-600 hover:bg-kirana-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 shrink-0 transition-all active:scale-95"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Scan Packet</span>
+              </button>
+            </div>
+
             <form onSubmit={handleSaveProduct} className="p-5 space-y-4 text-xs">
-              {/* Product Name */}
+              {/* Product Name with autocomplete datalist */}
               <div className="space-y-1">
-                <label className="font-semibold text-slate-700 dark:text-slate-300">
-                  Product Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Aashirvaad Shudh Chakki Atta (10kg)"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
-                  autoFocus
-                />
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Product Name *
+                  </label>
+                  <span className="text-[10px] text-kirana-600 dark:text-kirana-400 font-medium">
+                    Type or pick from dropdown of old items
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    list="known-products-datalist"
+                    placeholder="Type or select e.g. Tata Salt, Maggi, Atta..."
+                    value={formName}
+                    onChange={(e) => handleNameInputChange(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                    autoFocus
+                  />
+                  <datalist id="known-products-datalist">
+                    {allKnownProducts.map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.brand ? `[${item.brand}] ` : ''}MRP: ₹{item.sellingPrice || 0}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
               </div>
 
               {/* Barcode with Direct Camera Scanner Button */}
@@ -1370,11 +1561,14 @@ export const InventoryView: React.FC<Props> = ({ openNewProductModalOnMount }) =
         </div>
       )}
 
-      {/* Barcode Camera Scanner */}
+      {/* Barcode & Whole Product Camera Scanner */}
       <BarcodeScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleBarcodeScanned}
+        onProductExtracted={handleProductExtracted}
+        initialTab={scannerInitialTab}
+        defaultGeminiApiKey={settings?.geminiApiKey}
       />
     </div>
   );

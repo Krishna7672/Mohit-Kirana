@@ -52,6 +52,8 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   ownerPin: '',
   pinEnabled: false,
   currencySymbol: '₹',
+  posTerminalName: 'POS-1',
+  forceMobileLayout: false,
 };
 
 // Realistic grocery sample inventory

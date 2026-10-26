@@ -18,6 +18,7 @@ export interface Product {
   supplierName?: string;
   expiryDate?: string;
   isArchived: boolean;
+  addedByTerminal?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,6 +67,8 @@ export interface Invoice {
   udharAmount: number;
   status: 'completed' | 'refunded' | 'cancelled';
   notes?: string;
+  posTerminalName?: string;
+  walkInCustomerName?: string;
   createdAt: string;
 }
 
@@ -93,6 +96,7 @@ export interface StockMovement {
   quantityAfter: number;
   referenceId?: string;
   reason: string;
+  posTerminalName?: string;
   date: string;
 }
 
@@ -143,6 +147,9 @@ export interface StoreSettings {
   ownerPin: string;
   pinEnabled: boolean;
   currencySymbol: string;
+  geminiApiKey?: string;
+  posTerminalName?: string; // e.g. 'POS-1', 'POS-2'
+  forceMobileLayout?: boolean;
   lastBackupDate?: string;
 }
 

@@ -46,6 +46,7 @@ interface Props {
   totalUdhar: number;
   onTriggerSync?: () => void;
   isSyncing?: boolean;
+  forceMobileLayout?: boolean;
 }
 
 export const Navigation: React.FC<Props> = ({
@@ -59,6 +60,7 @@ export const Navigation: React.FC<Props> = ({
   lowStockCount,
   onTriggerSync,
   isSyncing,
+  forceMobileLayout = false,
 }) => {
   const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -74,7 +76,7 @@ export const Navigation: React.FC<Props> = ({
   return (
     <>
       {/* Desktop Sidebar (Left) */}
-      <aside className="no-print hidden lg:flex flex-col w-64 bg-kirana-950 text-white shrink-0 shadow-xl border-r border-kirana-900 z-30">
+      <aside className={`no-print ${forceMobileLayout ? 'hidden' : 'hidden lg:flex'} flex-col w-64 bg-kirana-950 text-white shrink-0 shadow-xl border-r border-kirana-900 z-30`}>
         {/* Brand Header */}
         <div className="p-5 flex items-center gap-3 border-b border-kirana-900/60 bg-kirana-900/30">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-kirana-500 to-kirana-600 flex items-center justify-center text-white shadow-md shadow-kirana-500/20">
@@ -84,7 +86,7 @@ export const Navigation: React.FC<Props> = ({
             <h1 className="font-extrabold text-base tracking-tight text-white truncate">
               {shopName || 'Mohit Kirana'}
             </h1>
-            <p className="text-[11px] text-kirana-300 font-medium">Grocery POS & Khata</p>
+            <p className="text-[11px] text-kirana-300 font-medium">Grocery POS &amp; Khata</p>
           </div>
         </div>
 
@@ -145,7 +147,7 @@ export const Navigation: React.FC<Props> = ({
                   className={`p-1.5 rounded-lg bg-kirana-900/70 hover:bg-kirana-800 text-kirana-200 transition-colors ${
                     isSyncing ? 'animate-spin text-emerald-300' : ''
                   }`}
-                  title="Auto-Scan & Verify Data"
+                  title="Auto-Scan &amp; Verify Data"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
@@ -167,24 +169,24 @@ export const Navigation: React.FC<Props> = ({
       </aside>
 
       {/* Mobile Top App Bar */}
-      <header className="no-print lg:hidden fixed top-0 inset-x-0 h-14 bg-kirana-950 text-white flex items-center justify-between px-4 z-40 border-b border-kirana-900 shadow-md">
+      <header className={`no-print ${forceMobileLayout ? 'fixed top-0 max-w-md inset-x-0 mx-auto' : 'fixed top-0 inset-x-0 lg:hidden'} h-14 bg-kirana-950 text-white flex items-center justify-between px-4 z-40 border-b border-kirana-900 shadow-md`}>
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-kirana-600 flex items-center justify-center text-white font-black text-sm">
             MK
           </div>
-          <span className="font-bold text-sm tracking-tight truncate max-w-[170px]">
+          <span className="font-bold text-sm tracking-tight truncate max-w-[150px]">
             {shopName || 'Mohit Kirana'}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {onTriggerSync && (
             <button
               onClick={onTriggerSync}
               className={`p-1.5 rounded-lg text-kirana-300 hover:text-white ${
                 isSyncing ? 'animate-spin text-emerald-400' : ''
               }`}
-              title="Auto-Scan & Sync Data"
+              title="Auto-Scan &amp; Sync Data"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -203,11 +205,20 @@ export const Navigation: React.FC<Props> = ({
           >
             {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`p-1.5 rounded-lg transition-colors ${
+              activeTab === 'settings' ? 'bg-kirana-800 text-white' : 'text-kirana-300 hover:text-white'
+            }`}
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="no-print lg:hidden fixed bottom-0 inset-x-0 h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-5 z-40 shadow-lg">
+      <nav className={`no-print ${forceMobileLayout ? 'fixed bottom-0 max-w-md inset-x-0 mx-auto' : 'fixed bottom-0 inset-x-0 lg:hidden'} h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-5 z-40 shadow-lg`}>
         {[
           { id: 'dashboard' as const, label: 'Home', icon: LayoutDashboard },
           { id: 'pos' as const, label: 'Bill', icon: ShoppingCart, highlight: true },

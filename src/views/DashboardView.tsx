@@ -19,7 +19,8 @@ import {
   Eye,
   Calendar,
   Layers,
-  ChevronRight
+  ChevronRight,
+  RotateCcw
 } from 'lucide-react';
 import {
   AreaChart,
@@ -54,20 +55,28 @@ export const DashboardView: React.FC<Props> = ({
   const products = useLiveQuery(() => db.products.toArray()) || [];
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
   const invoices = useLiveQuery(() => db.invoices.toArray()) || [];
+  const stockMovements = useLiveQuery(() => db.stockMovements.toArray()) || [];
 
-  // Metrics calculations
+  // Metrics calculations (Sales, Refunds & Returns, Stock Inward Entries - NO profit)
   const stats = useMemo(() => {
     const today = new Date();
     const todayDateStr = today.toISOString().slice(0, 10);
 
     const completedInvoices = invoices.filter((i) => i.status === 'completed');
-    const todayInvoices = completedInvoices.filter(
+    const refundedInvoices = invoices.filter((i) => i.status === 'refunded');
+
+    const todayCompleted = completedInvoices.filter(
+      (i) => i.date.slice(0, 10) === todayDateStr
+    );
+    const todayRefunded = refundedInvoices.filter(
       (i) => i.date.slice(0, 10) === todayDateStr
     );
 
-    const todaySales = todayInvoices.reduce((sum, i) => sum + i.totalAmount, 0);
-    const todayProfit = todayInvoices.reduce((sum, i) => sum + (i.profit || 0), 0);
-    const totalLifetimeProfit = completedInvoices.reduce((sum, i) => sum + (i.profit || 0), 0);
+    const todaySales = todayCompleted.reduce((sum, i) => sum + i.totalAmount, 0);
+    const totalLifetimeSales = completedInvoices.reduce((sum, i) => sum + i.totalAmount, 0);
+
+    const todayRefundAmount = todayRefunded.reduce((sum, i) => sum + i.totalAmount, 0);
+    const totalRefundAmountLifetime = refundedInvoices.reduce((sum, i) => sum + i.totalAmount, 0);
 
     const activeProducts = products.filter((p) => !p.isArchived);
     const lowStockItems = activeProducts.filter(
@@ -75,11 +84,19 @@ export const DashboardView: React.FC<Props> = ({
     );
     const outOfStockItems = activeProducts.filter((p) => p.stockQuantity <= 0);
 
+    // Stock Inward movements (manual_in, purchase, refund_restock)
+    const inwardMovements = stockMovements.filter(
+      (m) => m.type === 'manual_in' || m.type === 'purchase' || m.type === 'refund_restock'
+    );
+    const todayInward = inwardMovements.filter(
+      (m) => m.date.slice(0, 10) === todayDateStr
+    );
+
     const repeatCustomers = customers.filter((c) => c.purchaseCount >= 2);
     const totalUdhar = customers.reduce((sum, c) => sum + (c.outstandingUdhar || 0), 0);
 
     // Recent transactions (last 6)
-    const recentInvoices = [...completedInvoices]
+    const recentInvoices = [...completedInvoices, ...refundedInvoices]
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 6);
 
@@ -101,8 +118,14 @@ export const DashboardView: React.FC<Props> = ({
 
     return {
       todaySales,
-      todayProfit,
-      totalBillsToday: todayInvoices.length,
+      totalLifetimeSales,
+      totalBillsToday: todayCompleted.length,
+      todayRefundAmount,
+      todayRefundCount: todayRefunded.length,
+      totalRefundsCount: refundedInvoices.length,
+      totalRefundAmountLifetime,
+      todayInwardCount: todayInward.length,
+      totalInwardCount: inwardMovements.length,
       totalProducts: activeProducts.length,
       lowStockCount: lowStockItems.length,
       lowStockItems,
@@ -110,63 +133,75 @@ export const DashboardView: React.FC<Props> = ({
       registeredCustomers: customers.length,
       repeatCustomersCount: repeatCustomers.length,
       totalUdhar,
-      totalLifetimeProfit,
       recentInvoices,
       topSelling,
     };
-  }, [invoices, products, customers]);
+  }, [invoices, products, customers, stockMovements]);
 
-  // Chart data based on selected range
+  // Chart data based on selected range (Sales & Refunds)
   const chartData = useMemo(() => {
     const completed = invoices.filter((i) => i.status === 'completed');
+    const refunded = invoices.filter((i) => i.status === 'refunded');
 
     if (chartRange === '7days') {
-      const days: { label: string; date: string; sales: number; profit: number }[] = [];
+      const days: { label: string; date: string; sales: number; refunds: number }[] = [];
       for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().slice(0, 10);
         const dayLabel = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' });
         
-        const dayInvoices = completed.filter((inv) => inv.date.slice(0, 10) === dateStr);
-        const daySales = dayInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
-        const dayProfit = dayInvoices.reduce((sum, inv) => sum + (inv.profit || 0), 0);
+        const daySales = completed
+          .filter((inv) => inv.date.slice(0, 10) === dateStr)
+          .reduce((sum, inv) => sum + inv.totalAmount, 0);
 
-        days.push({ label: dayLabel, date: dateStr, sales: daySales, profit: dayProfit });
+        const dayRefunds = refunded
+          .filter((inv) => inv.date.slice(0, 10) === dateStr)
+          .reduce((sum, inv) => sum + inv.totalAmount, 0);
+
+        days.push({ label: dayLabel, date: dateStr, sales: daySales, refunds: dayRefunds });
       }
       return days;
     }
 
     if (chartRange === '30days') {
-      const days: { label: string; date: string; sales: number; profit: number }[] = [];
+      const days: { label: string; date: string; sales: number; refunds: number }[] = [];
       for (let i = 29; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().slice(0, 10);
         const dayLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
-        const dayInvoices = completed.filter((inv) => inv.date.slice(0, 10) === dateStr);
-        const daySales = dayInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
-        const dayProfit = dayInvoices.reduce((sum, inv) => sum + (inv.profit || 0), 0);
+        const daySales = completed
+          .filter((inv) => inv.date.slice(0, 10) === dateStr)
+          .reduce((sum, inv) => sum + inv.totalAmount, 0);
 
-        days.push({ label: dayLabel, date: dateStr, sales: daySales, profit: dayProfit });
+        const dayRefunds = refunded
+          .filter((inv) => inv.date.slice(0, 10) === dateStr)
+          .reduce((sum, inv) => sum + inv.totalAmount, 0);
+
+        days.push({ label: dayLabel, date: dateStr, sales: daySales, refunds: dayRefunds });
       }
       return days;
     }
 
     // Monthly aggregation (last 6 months)
-    const months: { label: string; sales: number; profit: number }[] = [];
+    const months: { label: string; sales: number; refunds: number }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
       const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const monthLabel = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
 
-      const monthInvoices = completed.filter((inv) => inv.date.startsWith(yearMonth));
-      const monthSales = monthInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
-      const monthProfit = monthInvoices.reduce((sum, inv) => sum + (inv.profit || 0), 0);
+      const monthSales = completed
+        .filter((inv) => inv.date.startsWith(yearMonth))
+        .reduce((sum, inv) => sum + inv.totalAmount, 0);
 
-      months.push({ label: monthLabel, sales: monthSales, profit: monthProfit });
+      const monthRefunds = refunded
+        .filter((inv) => inv.date.startsWith(yearMonth))
+        .reduce((sum, inv) => sum + inv.totalAmount, 0);
+
+      months.push({ label: monthLabel, sales: monthSales, refunds: monthRefunds });
     }
     return months;
   }, [invoices, chartRange]);
@@ -287,12 +322,12 @@ export const DashboardView: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* KPI Cards Grid */}
+      {/* KPI Cards Grid (Sales, Refunds/Returns, Stock Inward Entries, Udhar) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Today's Sales */}
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Today&apos;s Sales</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Today&apos;s Gross Sales</span>
             <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl">
               <TrendingUp className="w-4 h-4" />
             </div>
@@ -303,87 +338,84 @@ export const DashboardView: React.FC<Props> = ({
             </p>
             <div className="flex items-center justify-between text-xs mt-1 text-slate-500 dark:text-slate-400">
               <span>{stats.totalBillsToday} bills completed</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                Profit: {formatINR(stats.todayProfit)}
+              <span className="text-slate-600 dark:text-slate-400 font-medium">
+                Lifetime: {formatINR(stats.totalLifetimeSales)}
               </span>
             </div>
           </div>
           <div className="absolute bottom-0 inset-x-0 h-1 bg-emerald-500" />
         </div>
 
+        {/* Refunds & Returns */}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Refunds & Returns</span>
+            <div className="p-2 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl">
+              <RotateCcw className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <p className="text-2xl font-black text-rose-600 dark:text-rose-400">
+              {formatINR(stats.todayRefundAmount)}
+            </p>
+            <div className="flex items-center justify-between text-xs mt-1 text-slate-500 dark:text-slate-400">
+              <span>{stats.todayRefundCount} returns today</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                {stats.totalRefundsCount} all-time ({formatINR(stats.totalRefundAmountLifetime)})
+              </span>
+            </div>
+          </div>
+          <div className="absolute bottom-0 inset-x-0 h-1 bg-rose-500" />
+        </div>
+
+        {/* Stock Inward & Entries */}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Stock Inward / Entries</span>
+            <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
+              <Truck className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <p className="text-2xl font-black text-blue-600 dark:text-blue-400">
+              {stats.todayInwardCount} <span className="text-xs font-normal text-slate-500">entries today</span>
+            </p>
+            <div className="flex items-center justify-between text-xs mt-1 text-slate-500 dark:text-slate-400">
+              <span>{stats.totalProducts} active SKUs</span>
+              <button
+                onClick={() => setActiveTab('inventory')}
+                className="text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+              >
+                {stats.totalInwardCount} total entries
+              </button>
+            </div>
+          </div>
+          <div className="absolute bottom-0 inset-x-0 h-1 bg-blue-500" />
+        </div>
+
         {/* Outstanding Udhar */}
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Outstanding Udhar</span>
-            <div className="p-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl">
+            <div className="p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl">
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2">
-            <p className="text-2xl font-black text-red-600 dark:text-red-400">
+            <p className="text-2xl font-black text-amber-600 dark:text-amber-400">
               {formatINR(stats.totalUdhar)}
             </p>
             <div className="flex items-center justify-between text-xs mt-1 text-slate-500 dark:text-slate-400">
-              <span>Total market credit</span>
+              <span>Market credit to collect</span>
               <button
                 onClick={() => setActiveTab('udhar')}
-                className="text-red-700 dark:text-red-400 font-semibold hover:underline flex items-center gap-0.5"
+                className="text-amber-700 dark:text-amber-400 font-semibold hover:underline flex items-center gap-0.5"
               >
                 View Khata <ChevronRight className="w-3 h-3" />
               </button>
             </div>
           </div>
-          <div className="absolute bottom-0 inset-x-0 h-1 bg-red-500" />
-        </div>
-
-        {/* Inventory Stock Status */}
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Inventory Products</span>
-            <div className="p-2 bg-kirana-50 dark:bg-kirana-900/30 text-kirana-600 dark:text-kirana-400 rounded-xl">
-              <Package className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <p className="text-2xl font-black text-slate-900 dark:text-white">
-              {stats.totalProducts} <span className="text-xs font-normal text-slate-500">items</span>
-            </p>
-            <div className="flex items-center gap-2 text-xs mt-1">
-              <span className={`px-2 py-0.5 rounded font-bold ${stats.lowStockCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
-                {stats.lowStockCount} Low
-              </span>
-              <span className={`px-2 py-0.5 rounded font-bold ${stats.outOfStockCount > 0 ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'}`}>
-                {stats.outOfStockCount} Out
-              </span>
-            </div>
-          </div>
-          <div className="absolute bottom-0 inset-x-0 h-1 bg-kirana-600" />
-        </div>
-
-        {/* Customer Base & Repeat Customers */}
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Customer Base</span>
-            <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
-              <UserCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <p className="text-2xl font-black text-slate-900 dark:text-white">
-              {stats.registeredCustomers}
-            </p>
-            <div className="flex items-center justify-between text-xs mt-1 text-slate-500 dark:text-slate-400">
-              <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                {stats.repeatCustomersCount} Repeat Buyers
-              </span>
-              <span>
-                {stats.registeredCustomers > 0
-                  ? `${Math.round((stats.repeatCustomersCount / stats.registeredCustomers) * 100)}% retention`
-                  : '0%'}
-              </span>
-            </div>
-          </div>
-          <div className="absolute bottom-0 inset-x-0 h-1 bg-blue-500" />
+          <div className="absolute bottom-0 inset-x-0 h-1 bg-amber-500" />
         </div>
       </div>
 
@@ -415,15 +447,15 @@ export const DashboardView: React.FC<Props> = ({
 
       {/* Charts & Analytics Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sales Trend Chart */}
+        {/* Sales & Returns Trend Chart */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-kirana-600" />
-                Sales & Profit Trends
+                Sales & Returns Trends
               </h3>
-              <p className="text-xs text-slate-500">Calculated from saved invoice records</p>
+              <p className="text-xs text-slate-500">Track gross sales and customer refunds</p>
             </div>
 
             {/* Range selector */}
@@ -469,9 +501,9 @@ export const DashboardView: React.FC<Props> = ({
                     <stop offset="5%" stopColor="#16a34a" stopOpacity={0.4} />
                     <stop offset="95%" stopColor="#16a34a" stopOpacity={0.0} />
                   </linearGradient>
-                  <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0284c7" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#0284c7" stopOpacity={0.0} />
+                  <linearGradient id="colorRefunds" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
@@ -503,12 +535,12 @@ export const DashboardView: React.FC<Props> = ({
                 />
                 <Area
                   type="monotone"
-                  dataKey="profit"
-                  name="Gross Profit"
-                  stroke="#0284c7"
+                  dataKey="refunds"
+                  name="Refunds & Returns"
+                  stroke="#f43f5e"
                   strokeWidth={2}
                   fillOpacity={1}
-                  fill="url(#colorProfit)"
+                  fill="url(#colorRefunds)"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -520,8 +552,8 @@ export const DashboardView: React.FC<Props> = ({
               <span className="text-slate-600 dark:text-slate-300 font-medium">Sales Revenue</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-sky-600" />
-              <span className="text-slate-600 dark:text-slate-300 font-medium">Estimated Gross Profit</span>
+              <span className="w-3 h-3 rounded-full bg-rose-500" />
+              <span className="text-slate-600 dark:text-slate-300 font-medium">Refunds & Returns</span>
             </div>
           </div>
         </div>
@@ -570,9 +602,9 @@ export const DashboardView: React.FC<Props> = ({
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs text-slate-500">
-            <span>Lifetime Gross Profit:</span>
+            <span>Total Lifetime Sales:</span>
             <span className="font-black text-emerald-600 dark:text-emerald-400">
-              {formatINR(stats.totalLifetimeProfit)}
+              {formatINR(stats.totalLifetimeSales)}
             </span>
           </div>
         </div>

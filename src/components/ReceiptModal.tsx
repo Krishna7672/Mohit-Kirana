@@ -150,9 +150,14 @@ export const ReceiptModal: React.FC<Props> = ({
                   <span>{formatDate(invoice.date)}</span>
                 </div>
                 <div className="flex justify-between text-[11px] text-left">
-                  <span>Cust: {invoice.customerName || 'Walk-in'}</span>
-                  <span>{invoice.customerPhone ? invoice.customerPhone : ''}</span>
+                  <span>Cust: {invoice.walkInCustomerName ? `${invoice.walkInCustomerName} (Walk-in)` : (invoice.customerName || 'Walk-in')}</span>
+                  <span>{invoice.posTerminalName ? `[${invoice.posTerminalName}]` : ''}</span>
                 </div>
+                {invoice.customerPhone && (
+                  <div className="flex justify-between text-[10px] text-left text-slate-600">
+                    <span>Phone: {invoice.customerPhone}</span>
+                  </div>
+                )}
 
                 <div className="my-2 border-b border-dashed border-slate-400" />
 
@@ -240,6 +245,9 @@ export const ReceiptModal: React.FC<Props> = ({
                     </span>
                     <p className="text-sm font-bold text-slate-900 mt-2 font-mono">{invoice.invoiceNumber}</p>
                     <p className="text-xs text-slate-500">Date: {formatDateTime(invoice.date)}</p>
+                    {invoice.posTerminalName && (
+                      <p className="text-[11px] font-bold text-kirana-700">Terminal: {invoice.posTerminalName}</p>
+                    )}
                   </div>
                 </div>
 
@@ -247,7 +255,9 @@ export const ReceiptModal: React.FC<Props> = ({
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 grid grid-cols-2 text-xs gap-4">
                   <div>
                     <p className="text-slate-400 font-medium">Billed To:</p>
-                    <p className="font-bold text-slate-800 text-sm">{invoice.customerName || 'Walk-in Customer'}</p>
+                    <p className="font-bold text-slate-800 text-sm">
+                      {invoice.walkInCustomerName ? `${invoice.walkInCustomerName} (Walk-in)` : (invoice.customerName || 'Walk-in Customer')}
+                    </p>
                     {invoice.customerPhone && <p className="text-slate-600">Phone: {invoice.customerPhone}</p>}
                   </div>
                   <div className="text-right">
