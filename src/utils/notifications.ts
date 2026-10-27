@@ -1,5 +1,5 @@
 import type { Invoice, Customer, StoreSettings } from '../types';
-import { formatINR, formatDate, cleanIndianPhoneNumber } from './formatters';
+import { formatINR, formatDate, cleanIndianPhoneNumber, formatQuantityWithSubUnit } from './formatters';
 
 export function buildReceiptMessage(invoice: Invoice, settings: StoreSettings): string {
   const customerName = invoice.customerName && invoice.customerName !== 'Walk-in Customer'
@@ -7,7 +7,11 @@ export function buildReceiptMessage(invoice: Invoice, settings: StoreSettings): 
     : 'Valued Customer';
 
   const itemsList = invoice.items
-    .map(i => `• ${i.name} (${i.quantity} ${i.unit}) — ${formatINR(i.total)}`)
+    .map((i) => {
+      const cleanName = i.name.replace(/\s*\([^)]*(g|gm|kg|ml|litre|L)\)\s*$/i, '');
+      const weightOrQty = formatQuantityWithSubUnit(i.quantity, i.unit, i.subUnitLabel);
+      return `• ${cleanName} (${weightOrQty}) — ${formatINR(i.total)}`;
+    })
     .join('\n');
 
   let balanceText = 'Balance: ₹0';

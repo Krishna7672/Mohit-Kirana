@@ -175,7 +175,92 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     return Array.from(map.values());
   }, [products]);
 
-  // Handle Name input change with auto-fill when selecting known product
+  // Intelligent unit & bulk quantity deduction for loose Kirana items
+  const inferUnitAndQuantity = (nameText: string, currentCategory: string) => {
+    const text = nameText.toLowerCase();
+
+    // 1. Check if quantity & unit are explicitly mentioned like "100kg", "50 kg", "25 kg", "15 litre", "15L", "5L", "500g"
+    const kgMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:kg|kilo|किलो)/i);
+    const litreMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:litre|liter|ltr|लीटर)\b/i) || text.match(/(\d+(?:\.\d+)?)\s*l\b/i);
+    const gramMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:gm|gram|ग्राम|g)\b/i);
+
+    let detectedUnit: UnitType | null = null;
+    let detectedQty: string | null = null;
+
+    if (kgMatch) {
+      detectedUnit = 'kg';
+      detectedQty = kgMatch[1];
+    } else if (litreMatch) {
+      detectedUnit = 'litre';
+      detectedQty = litreMatch[1];
+    } else if (gramMatch) {
+      detectedUnit = 'g';
+      detectedQty = gramMatch[1];
+    }
+
+    // 2. Keyword matching for loose grocery items
+    const kgKeywords = [
+      'sugar', 'shakkar', 'chini', 'cheeni',
+      'rice', 'chawal', 'basmati',
+      'atta', 'wheat', 'gehu', 'gehun',
+      'dal', 'daal', 'toor', 'tur', 'moong', 'urad', 'masoor', 'chana',
+      'besan', 'sooji', 'suji', 'rawa', 'maida', 'poha', 'sabudana',
+      'peanut', 'shengdana', 'moongfali', 'mungfali',
+      'jaggery', 'gur', 'gud',
+      'salt', 'namak'
+    ];
+
+    const litreKeywords = [
+      'oil', 'tel', 'tail', 'ghee', 'mustard oil', 'sarson', 'refined', 'soyabean', 'sunflower',
+      'milk', 'doodh', 'dudh', 'buttermilk', 'chaas'
+    ];
+
+    const gramKeywords = [
+      'elaichi', 'cardamom', 'clove', 'laung', 'dalchini', 'jeera', 'cumin', 'hing', 'kesar',
+      'dry fruit', 'kaju', 'badam', 'cashew', 'almond', 'kishmish', 'raisin'
+    ];
+
+    if (!detectedUnit) {
+      if (kgKeywords.some((k) => text.includes(k))) {
+        detectedUnit = 'kg';
+      } else if (litreKeywords.some((k) => text.includes(k))) {
+        detectedUnit = 'litre';
+      } else if (gramKeywords.some((k) => text.includes(k))) {
+        detectedUnit = 'g';
+      }
+    }
+
+    // 3. Category inference if unit still not detected
+    if (!detectedUnit && currentCategory) {
+      const cat = currentCategory.toLowerCase();
+      if (cat.includes('grains') || cat.includes('sugar') || cat.includes('atta') || cat.includes('dal') || cat.includes('flour')) {
+        detectedUnit = 'kg';
+      } else if (cat.includes('oil') || cat.includes('ghee') || cat.includes('dairy')) {
+        detectedUnit = 'litre';
+      } else if (cat.includes('spices') || cat.includes('dry fruit')) {
+        detectedUnit = 'kg';
+      }
+    }
+
+    return { detectedUnit, detectedQty };
+  };
+
+  // Handle Category change with smart unit defaulting
+  const handleCategoryChange = (val: string) => {
+    setFormCategory(val);
+    const cat = val.toLowerCase();
+    if (formUnit === 'packet' || formUnit === 'piece') {
+      if (cat.includes('grains') || cat.includes('sugar') || cat.includes('atta') || cat.includes('dal') || cat.includes('flour')) {
+        setFormUnit('kg');
+      } else if (cat.includes('oil') || cat.includes('ghee') || cat.includes('dairy')) {
+        setFormUnit('litre');
+      } else if (cat.includes('spices') || cat.includes('dry fruit')) {
+        setFormUnit('kg');
+      }
+    }
+  };
+
+  // Handle Name input change with auto-fill when selecting known product or smart loose commodity detection
   const handleNameInputChange = (val: string) => {
     setFormName(val);
     if (!val.trim()) return;
@@ -196,6 +281,21 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
       }
       setAutoFillNotice(`✨ Auto-filled details for "${matched.name}" from previous product records!`);
       setTimeout(() => setAutoFillNotice(null), 3500);
+      return;
+    }
+
+    // Auto-detect unit and quantity for loose items like 100kg sugar, rice, dal, oil
+    const { detectedUnit, detectedQty } = inferUnitAndQuantity(val, formCategory);
+    if (detectedUnit && (!editingProduct || formUnit === 'packet')) {
+      setFormUnit(detectedUnit);
+      if (detectedQty && (!formStockQuantity || formStockQuantity === '10' || formStockQuantity === '0')) {
+        setFormStockQuantity(detectedQty);
+      }
+      if (!formCategory) {
+        if (detectedUnit === 'kg') setFormCategory('Grains & Sugar');
+        else if (detectedUnit === 'litre') setFormCategory('Edible Oils & Ghee');
+        else if (detectedUnit === 'g') setFormCategory('Spices & Seasonings');
+      }
     }
   };
 
@@ -521,22 +621,29 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
   const valuation = useMemo(() => {
     const active = products.filter((p) => !p.isArchived);
     const totalCostValue = active.reduce(
-      (sum, p) => sum + p.stockQuantity * p.purchasePrice,
+      (sum, p) => sum + Math.max(0, p.stockQuantity || 0) * (p.purchasePrice || 0),
       0
     );
     const totalRetailValue = active.reduce(
-      (sum, p) => sum + p.stockQuantity * p.sellingPrice,
+      (sum, p) => sum + Math.max(0, p.stockQuantity || 0) * (p.sellingPrice || 0),
+      0
+    );
+    const totalUnits = active.reduce(
+      (sum, p) => sum + Math.max(0, p.stockQuantity || 0),
       0
     );
     const estimatedMargin = totalRetailValue - totalCostValue;
+    const hasCostTracking = totalCostValue > 0;
 
     return {
       activeCount: active.length,
+      totalUnits,
       totalCostValue,
       totalRetailValue,
       estimatedMargin,
+      hasCostTracking,
       marginPercent:
-        totalRetailValue > 0 ? (estimatedMargin / totalRetailValue) * 100 : 0,
+        hasCostTracking && totalRetailValue > 0 ? (estimatedMargin / totalRetailValue) * 100 : 0,
     };
   }, [products]);
 
@@ -657,34 +764,40 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
 
       {/* Inventory Valuation Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm border-l-4 border-l-kirana-600">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Stock Value (Retail)</span>
+          <p className="text-xl font-black text-kirana-800 dark:text-kirana-400 mt-1">
+            {formatINR(valuation.totalRetailValue)}
+          </p>
+        </div>
+
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Items in Store</span>
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
-            {valuation.activeCount} <span className="text-xs font-normal text-slate-400">SKUs</span>
+            {valuation.activeCount} <span className="text-xs font-normal text-slate-400">SKUs ({valuation.totalUnits} units)</span>
           </p>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Stock Cost</span>
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
-            {formatINR(valuation.totalCostValue)}
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Stock Retail Value</span>
-          <p className="text-xl font-black text-kirana-700 dark:text-kirana-400 mt-1">
-            {formatINR(valuation.totalRetailValue)}
+            {valuation.hasCostTracking ? formatINR(valuation.totalCostValue) : <span className="text-slate-400 text-sm font-bold">Not set (₹0)</span>}
           </p>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Estimated Gross Margin</span>
           <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-            {formatINR(valuation.estimatedMargin)}{' '}
-            <span className="text-xs font-bold text-emerald-700">
-              ({valuation.marginPercent.toFixed(1)}%)
-            </span>
+            {valuation.hasCostTracking ? (
+              <>
+                {formatINR(valuation.estimatedMargin)}{' '}
+                <span className="text-xs font-bold text-emerald-700">
+                  ({valuation.marginPercent.toFixed(1)}%)
+                </span>
+              </>
+            ) : (
+              <span className="text-xs font-semibold text-slate-400">— (Enter cost price)</span>
+            )}
           </p>
         </div>
       </div>
@@ -782,6 +895,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                   <th className="py-3 px-3 text-right">Purchase Price</th>
                   <th className="py-3 px-3 text-right">Selling Price</th>
                   <th className="py-3 px-3 text-center">Stock Available</th>
+                  <th className="py-3 px-3 text-right">Stock Value</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -815,10 +929,10 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                       </td>
 
                       <td className="py-3 px-3 text-right font-mono text-slate-600 dark:text-slate-400">
-                        {formatINR(p.purchasePrice)}
+                        {p.purchasePrice > 0 ? formatINR(p.purchasePrice) : <span className="text-slate-400 text-[11px]">₹0</span>}
                       </td>
 
-                      <td className="py-3 px-3 text-right font-mono font-extrabold text-kirana-800 dark:text-kirana-400">
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-slate-900 dark:text-white">
                         {formatINR(p.sellingPrice)}
                         <span className="text-[10px] font-normal text-slate-400">/{p.unit}</span>
                       </td>
@@ -837,6 +951,10 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                             {p.stockQuantity} {p.unit}
                           </span>
                         </div>
+                      </td>
+
+                      <td className="py-3 px-3 text-right font-mono font-bold text-kirana-700 dark:text-kirana-400">
+                        {formatINR(Math.max(0, p.stockQuantity) * p.sellingPrice)}
                       </td>
 
                       <td className="py-3 px-4 text-right">
@@ -1139,9 +1257,9 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                   <label className="font-semibold text-slate-700 dark:text-slate-300">Category</label>
                   <input
                     type="text"
-                    placeholder="e.g. Atta & Flours"
+                    placeholder="e.g. Grains & Sugar, Atta, Edible Oils"
                     value={formCategory}
-                    onChange={(e) => setFormCategory(e.target.value)}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
                     list="category-suggestions"
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   />
@@ -1156,7 +1274,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                   <label className="font-semibold text-slate-700 dark:text-slate-300">Brand</label>
                   <input
                     type="text"
-                    placeholder="e.g. Aashirvaad, Tata, Amul"
+                    placeholder="e.g. Aashirvaad, Tata, Amul, Generic / Loose"
                     value={formBrand}
                     onChange={(e) => setFormBrand(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -1167,30 +1285,35 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
               {/* Unit, Purchase Price, Selling Price */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">Unit Type</label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Unit Type *
+                  </label>
                   <select
                     value={formUnit}
                     onChange={(e) => setFormUnit(e.target.value as UnitType)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-xs"
                   >
-                    <option value="packet">packet</option>
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="litre">litre</option>
-                    <option value="ml">ml</option>
-                    <option value="piece">piece</option>
-                    <option value="box">box</option>
-                    <option value="bottle">bottle</option>
-                    <option value="carton">carton</option>
+                    <option value="kg">kg (Kilogram - for loose Sugar, Rice, Dal, Atta, Grains)</option>
+                    <option value="g">g (Gram - for loose Spices, Dry Fruits)</option>
+                    <option value="litre">litre (Litre - for loose/bottle Oil, Ghee, Milk)</option>
+                    <option value="ml">ml (Millilitre - for liquids)</option>
+                    <option value="packet">packet (Packet - packaged Biscuits, Snacks, Soaps)</option>
+                    <option value="piece">piece (Piece - single items)</option>
+                    <option value="box">box (Box)</option>
+                    <option value="bottle">bottle (Bottle)</option>
+                    <option value="carton">carton (Carton)</option>
+                    <option value="dozen">dozen (Dozen)</option>
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">Cost Price (₹)</label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Cost Price (₹/{formUnit})
+                  </label>
                   <input
                     type="number"
                     step="any"
-                    placeholder="e.g. 380"
+                    placeholder={formUnit === 'kg' ? 'e.g. 38' : 'e.g. 120'}
                     value={formPurchasePrice}
                     onChange={(e) => setFormPurchasePrice(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono"
@@ -1198,12 +1321,14 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-700 dark:text-slate-300">Selling Price (₹) *</label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Selling Price (₹/{formUnit}) *
+                  </label>
                   <input
                     type="number"
                     step="any"
                     required
-                    placeholder="e.g. 425"
+                    placeholder={formUnit === 'kg' ? 'e.g. 44' : 'e.g. 140'}
                     value={formSellingPrice}
                     onChange={(e) => setFormSellingPrice(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold"
@@ -1211,16 +1336,28 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
                 </div>
               </div>
 
+              {/* Retail Loose Kirana Item Informative Banner */}
+              {['kg', 'litre', 'g', 'ml'].includes(formUnit) && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5">
+                  <span className="text-lg leading-none">⚖️</span>
+                  <div>
+                    <span className="font-bold">Retail Loose Grocery Item ({formUnit.toUpperCase()}): </span>
+                    Enter bulk warehouse stock (e.g. <strong>100 kg</strong> sugar or <strong>15 litre</strong> oil). In POS billing, this loose item is sold in retail customer amounts (<strong>100g, 250g, 500g, 1kg</strong>) or exact rupee amounts (e.g. <strong>₹10 sugar</strong>).
+                  </div>
+                </div>
+              )}
+
               {/* Initial Stock Quantity & Low Stock Threshold */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
-                    Stock Quantity *
+                    Stock Quantity ({formUnit}) *
                   </label>
                   <input
                     type="number"
                     step="any"
                     required
+                    placeholder={formUnit === 'kg' ? 'e.g. 100' : formUnit === 'litre' ? 'e.g. 15' : 'e.g. 10'}
                     value={formStockQuantity}
                     onChange={(e) => setFormStockQuantity(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
@@ -1229,7 +1366,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
 
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 dark:text-slate-300">
-                    Low Stock Alert At
+                    Low Stock Alert At ({formUnit})
                   </label>
                   <input
                     type="number"

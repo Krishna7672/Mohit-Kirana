@@ -172,16 +172,30 @@ export const ReceiptModal: React.FC<Props> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {invoice.items.map((item, idx) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="py-1 pr-1 font-semibold text-slate-800">{item.name}</td>
-                        <td className="py-1 text-center whitespace-nowrap">
-                          {formatQuantityWithSubUnit(item.quantity, item.unit, item.subUnitLabel)}
-                        </td>
-                        <td className="py-1 text-right">{formatINR(item.sellingPrice)}</td>
-                        <td className="py-1 text-right font-medium">{formatINR(item.total)}</td>
-                      </tr>
-                    ))}
+                    {invoice.items.map((item, idx) => {
+                      const isWeightOrCustom =
+                        ['kg', 'g', 'litre', 'ml'].includes(item.unit) ||
+                        Boolean(item.subUnitLabel) ||
+                        Boolean(item.isCustomPrice) ||
+                        item.quantity < 1 ||
+                        item.quantity % 1 !== 0;
+
+                      // Strip any redundant appended weight in parentheses if already present in older invoice names
+                      const displayName = item.name.replace(/\s*\([^)]*(g|gm|kg|ml|litre|L)\)\s*$/i, '');
+
+                      return (
+                        <tr key={idx} className="border-b border-slate-100">
+                          <td className="py-1 pr-1 font-semibold text-slate-800">{displayName}</td>
+                          <td className="py-1 text-center whitespace-nowrap font-medium text-slate-700">
+                            {formatQuantityWithSubUnit(item.quantity, item.unit, item.subUnitLabel)}
+                          </td>
+                          <td className="py-1 text-right text-slate-600">
+                            {isWeightOrCustom ? '—' : formatINR(item.sellingPrice)}
+                          </td>
+                          <td className="py-1 text-right font-black text-slate-900">{formatINR(item.total)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
 
@@ -281,17 +295,30 @@ export const ReceiptModal: React.FC<Props> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {invoice.items.map((item, index) => (
-                      <tr key={index} className="border-b border-slate-100">
-                        <td className="p-2 text-slate-400">{index + 1}</td>
-                        <td className="p-2 font-medium text-slate-800">{item.name}</td>
-                        <td className="p-2 text-center whitespace-nowrap">
-                          {formatQuantityWithSubUnit(item.quantity, item.unit, item.subUnitLabel)}
-                        </td>
-                        <td className="p-2 text-right">{formatINR(item.sellingPrice)}</td>
-                        <td className="p-2 text-right font-semibold">{formatINR(item.total)}</td>
-                      </tr>
-                    ))}
+                    {invoice.items.map((item, index) => {
+                      const isWeightOrCustom =
+                        ['kg', 'g', 'litre', 'ml'].includes(item.unit) ||
+                        Boolean(item.subUnitLabel) ||
+                        Boolean(item.isCustomPrice) ||
+                        item.quantity < 1 ||
+                        item.quantity % 1 !== 0;
+
+                      const displayName = item.name.replace(/\s*\([^)]*(g|gm|kg|ml|litre|L)\)\s*$/i, '');
+
+                      return (
+                        <tr key={index} className="border-b border-slate-100">
+                          <td className="p-2 text-slate-400">{index + 1}</td>
+                          <td className="p-2 font-medium text-slate-800">{displayName}</td>
+                          <td className="p-2 text-center whitespace-nowrap font-medium text-slate-700">
+                            {formatQuantityWithSubUnit(item.quantity, item.unit, item.subUnitLabel)}
+                          </td>
+                          <td className="p-2 text-right text-slate-600">
+                            {isWeightOrCustom ? '—' : formatINR(item.sellingPrice)}
+                          </td>
+                          <td className="p-2 text-right font-bold text-slate-900">{formatINR(item.total)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
 

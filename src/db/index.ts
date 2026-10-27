@@ -36,24 +36,26 @@ export class MohitKiranaDB extends Dexie {
   }
 }
 
+import sampleBackupData from '../data/sampleBackup.json';
+
 export const db = new MohitKiranaDB();
 
 export const DEFAULT_SETTINGS: StoreSettings = {
   id: 'main',
   shopName: 'Mohit Kirana',
   tagline: 'Aapki Apni Vishwasniya Kirana Dukan',
-  ownerName: 'Mohit Kumar',
-  phone: '+91 98765 43210',
-  address: 'Shop No. 12, Main Market, Clock Tower, Sector 4, New Delhi - 110001',
-  gstin: '07AAAAA0000A1Z5',
-  upiId: 'mohitkirana@okhdfcbank',
+  ownerName: 'Mohit Jain',
+  phone: '+91 9767160743',
+  address: 'Santaji chowk varud',
+  gstin: '',
+  upiId: 'mohitkirana7600@ybl',
   receiptFooter: 'Dhanyawad! Please visit again. Note: Items returned within 7 days with bill.',
   thermalWidth: '80mm',
   ownerPin: '',
   pinEnabled: false,
   currencySymbol: '₹',
   posTerminalName: 'POS-1',
-  forceMobileLayout: false,
+  forceMobileLayout: true,
 };
 
 // Realistic grocery sample inventory
@@ -464,11 +466,25 @@ export async function autoScanAndSyncData(): Promise<{
     const snapshotKey = 'mohit_kirana_offline_snapshot';
     const snapshotStr = localStorage.getItem(snapshotKey);
 
-    // 2. If Dexie is empty but a local backup snapshot exists, auto-scan & add it!
-    if (productsCount === 0 && customersCount === 0 && snapshotStr) {
-      const parsed = JSON.parse(snapshotStr);
-      if (parsed?.data) {
-        const { data } = parsed;
+    // 2. If Dexie is empty, load from snapshot or Mohit Kirana backup!
+    if (productsCount === 0 && customersCount === 0) {
+      let dataToLoad: any = null;
+      if (snapshotStr) {
+        try {
+          const parsed = JSON.parse(snapshotStr);
+          if (parsed?.data?.products?.length) {
+            dataToLoad = parsed.data;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!dataToLoad && sampleBackupData?.data?.products?.length) {
+        dataToLoad = sampleBackupData.data;
+      }
+
+      if (dataToLoad) {
         await db.transaction('rw', [
           db.products,
           db.customers,
@@ -476,15 +492,19 @@ export async function autoScanAndSyncData(): Promise<{
           db.udharLedger,
           db.stockMovements,
           db.suppliers,
-          db.purchases
+          db.purchases,
+          db.storeSettings
         ], async () => {
-          if (data.products?.length) await db.products.bulkAdd(data.products);
-          if (data.customers?.length) await db.customers.bulkAdd(data.customers);
-          if (data.invoices?.length) await db.invoices.bulkAdd(data.invoices);
-          if (data.udharLedger?.length) await db.udharLedger.bulkAdd(data.udharLedger);
-          if (data.stockMovements?.length) await db.stockMovements.bulkAdd(data.stockMovements);
-          if (data.suppliers?.length) await db.suppliers.bulkAdd(data.suppliers);
-          if (data.purchases?.length) await db.purchases.bulkAdd(data.purchases);
+          if (dataToLoad.products?.length) await db.products.bulkAdd(dataToLoad.products);
+          if (dataToLoad.customers?.length) await db.customers.bulkAdd(dataToLoad.customers);
+          if (dataToLoad.invoices?.length) await db.invoices.bulkAdd(dataToLoad.invoices);
+          if (dataToLoad.udharLedger?.length) await db.udharLedger.bulkAdd(dataToLoad.udharLedger);
+          if (dataToLoad.stockMovements?.length) await db.stockMovements.bulkAdd(dataToLoad.stockMovements);
+          if (dataToLoad.suppliers?.length) await db.suppliers.bulkAdd(dataToLoad.suppliers);
+          if (dataToLoad.purchases?.length) await db.purchases.bulkAdd(dataToLoad.purchases);
+          if (dataToLoad.storeSettings?.length) {
+            await db.storeSettings.bulkPut(dataToLoad.storeSettings);
+          }
         });
 
         const newPCount = await db.products.count();
@@ -497,7 +517,7 @@ export async function autoScanAndSyncData(): Promise<{
           customersCount: newCCount,
           invoicesCount: newICount,
           restoredFromSnapshot: true,
-          message: `Auto-scanned & synced ${newPCount} products and ${newCCount} parties from saved data.`
+          message: `Auto-loaded ${newPCount} products and ${newCCount} parties from Mohit Kirana data.`
         };
       }
     }
@@ -534,141 +554,18 @@ export async function initializeDatabase() {
     await db.storeSettings.put(DEFAULT_SETTINGS);
   }
 
-  // Automatic data scan, sync and demo purge on initialization
-  await autoScanAndSyncData();
+  // Auto-load Mohit Kirana store backup data if not yet initialized
+  if (!localStorage.getItem('mohit_kirana_backup_loaded_v1')) {
+    await importDatabaseBackup(JSON.stringify(sampleBackupData));
+    localStorage.setItem('mohit_kirana_backup_loaded_v1', 'true');
+  } else {
+    // Automatic data scan, sync and demo purge on initialization
+    await autoScanAndSyncData();
+  }
 }
 
 export async function seedDemoData() {
-  const existingProducts = await db.products.count();
-  if (existingProducts === 0) {
-    const insertedProductIds = await db.products.bulkAdd(SAMPLE_PRODUCTS as Product[], { allKeys: true });
-    const insertedCustomerIds = await db.customers.bulkAdd(SAMPLE_CUSTOMERS as Customer[], { allKeys: true });
-    await db.suppliers.bulkAdd(SAMPLE_SUPPLIERS as Supplier[]);
-
-    const sampleInvoices: Omit<Invoice, 'id'>[] = [
-      {
-        invoiceNumber: 'MK-20261024-0001',
-        date: '2026-10-24T18:30:00.000Z',
-        customerId: insertedCustomerIds[0] as number,
-        customerName: 'Rahul Sharma',
-        customerPhone: '9876543210',
-        items: [
-          {
-            productId: insertedProductIds[0] as number,
-            name: 'Aashirvaad Shudh Chakki Atta',
-            unit: 'kg',
-            quantity: 2,
-            purchasePrice: 380,
-            sellingPrice: 425,
-            discount: 0,
-            total: 850
-          },
-          {
-            productId: insertedProductIds[1] as number,
-            name: 'Fortune Sunlite Refined Sunflower Oil (1L)',
-            unit: 'litre',
-            quantity: 1,
-            purchasePrice: 125,
-            sellingPrice: 145,
-            discount: 0,
-            total: 145
-          }
-        ],
-        subtotal: 995,
-        discountAmount: 0,
-        totalAmount: 995,
-        costAmount: 885,
-        profit: 110,
-        paymentMethod: 'udhar',
-        paidAmount: 545,
-        udharAmount: 450,
-        status: 'completed',
-        notes: 'Partial payment made via UPI ₹545, remaining ₹450 as Udhar.',
-        createdAt: '2026-10-24T18:30:00.000Z'
-      },
-      {
-        invoiceNumber: 'MK-20261025-0002',
-        date: '2026-10-25T08:15:00.000Z',
-        customerId: insertedCustomerIds[2] as number,
-        customerName: 'Amit Kumar Singhal',
-        customerPhone: '9899112233',
-        items: [
-          {
-            productId: insertedProductIds[3] as number,
-            name: 'Madhur Pure & Hygienic Sugar (M-30)',
-            unit: 'kg',
-            quantity: 20,
-            purchasePrice: 40,
-            sellingPrice: 48,
-            discount: 0,
-            total: 960
-          },
-          {
-            productId: insertedProductIds[2] as number,
-            name: 'Tata Sampann Unpolished Toor Dal',
-            unit: 'kg',
-            quantity: 4,
-            purchasePrice: 150,
-            sellingPrice: 175,
-            discount: 0,
-            total: 700
-          }
-        ],
-        subtotal: 1660,
-        discountAmount: 0,
-        totalAmount: 1660,
-        costAmount: 1400,
-        profit: 260,
-        paymentMethod: 'split',
-        paidAmount: 460,
-        udharAmount: 1200,
-        status: 'completed',
-        notes: 'Paid ₹460 cash, ₹1200 recorded in Udhar khata.',
-        createdAt: '2026-10-25T08:15:00.000Z'
-      }
-    ];
-
-    const insertedInvoiceIds = await db.invoices.bulkAdd(sampleInvoices as Invoice[], { allKeys: true });
-
-    await db.udharLedger.bulkAdd([
-      {
-        customerId: insertedCustomerIds[0] as number,
-        customerName: 'Rahul Sharma',
-        customerPhone: '9876543210',
-        invoiceId: insertedInvoiceIds[0] as number,
-        invoiceNumber: 'MK-20261024-0001',
-        type: 'credit_sale',
-        amount: 450,
-        balanceAfter: 450,
-        notes: 'Bill MK-20261024-0001 credit balance',
-        date: '2026-10-24T18:30:00.000Z'
-      },
-      {
-        customerId: insertedCustomerIds[2] as number,
-        customerName: 'Amit Kumar Singhal',
-        customerPhone: '9899112233',
-        invoiceId: insertedInvoiceIds[1] as number,
-        invoiceNumber: 'MK-20261025-0002',
-        type: 'credit_sale',
-        amount: 1200,
-        balanceAfter: 1200,
-        notes: 'Bill MK-20261025-0002 credit balance',
-        date: '2026-10-25T08:15:00.000Z'
-      }
-    ]);
-
-    for (const p of SAMPLE_PRODUCTS) {
-      await db.stockMovements.add({
-        productId: 1,
-        productName: p.name,
-        type: 'manual_in',
-        quantityChange: p.stockQuantity,
-        quantityAfter: p.stockQuantity,
-        reason: 'Initial store opening stock',
-        date: new Date().toISOString()
-      });
-    }
-  }
+  await importDatabaseBackup(JSON.stringify(sampleBackupData));
 }
 
 export async function exportDatabaseBackup(): Promise<string> {

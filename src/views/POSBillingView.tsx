@@ -470,7 +470,7 @@ export const POSBillingView: React.FC<Props> = ({
           posTerminalName: currentTerminal,
           items: cart.map((c) => ({
             productId: c.product.id!,
-            name: c.subUnitLabel ? `${c.product.name} (${c.subUnitLabel})` : c.product.name,
+            name: c.product.name,
             unit: c.product.unit,
             quantity: c.quantity,
             purchasePrice: c.product.purchasePrice,
@@ -905,25 +905,34 @@ export const POSBillingView: React.FC<Props> = ({
                         </span>
                       </div>
 
-                      {/* Quick fraction chips for kg & litre items right on catalog card */}
-                      {['kg', 'litre'].includes(product.unit) && !isOutOfStock && (
+                      {/* Quick fraction chips for kg, litre, g items right on catalog card */}
+                      {['kg', 'litre', 'g'].includes(product.unit) && !isOutOfStock && (
                         <div
                           className="mt-2 pt-1.5 border-t border-dashed border-slate-100 dark:border-slate-700/80 flex items-center gap-1 overflow-x-auto scrollbar-none"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="text-[9px] text-slate-400 font-bold shrink-0">Add:</span>
+                          <span className="text-[9px] text-slate-400 font-bold shrink-0">Retail:</span>
                           {(product.unit === 'kg'
                             ? [
-                                { label: '25g', qty: 0.025 },
+                                { label: '100g', qty: 0.1 },
                                 { label: '250g', qty: 0.25 },
                                 { label: '500g', qty: 0.5 },
                                 { label: '1kg', qty: 1 },
+                                { label: '2kg', qty: 2 },
+                              ]
+                            : product.unit === 'g'
+                            ? [
+                                { label: '50g', qty: 50 },
+                                { label: '100g', qty: 100 },
+                                { label: '250g', qty: 250 },
+                                { label: '500g', qty: 500 },
                               ]
                             : [
-                                { label: '50ml', qty: 0.05 },
+                                { label: '100ml', qty: 0.1 },
                                 { label: '250ml', qty: 0.25 },
                                 { label: '500ml', qty: 0.5 },
                                 { label: '1L', qty: 1 },
+                                { label: '2L', qty: 2 },
                               ]
                           ).map((preset) => (
                             <button
@@ -1047,7 +1056,7 @@ export const POSBillingView: React.FC<Props> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              const step = isFractional ? 0.25 : 1;
+                              const step = isFractional ? 0.1 : 1;
                               const nextVal = Math.max(0.025, Math.round((item.quantity - step) * 1000) / 1000);
                               updateQuantity(item.product.id!, nextVal);
                             }}
@@ -1074,7 +1083,7 @@ export const POSBillingView: React.FC<Props> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              const step = isFractional ? 0.25 : 1;
+                              const step = isFractional ? 0.1 : 1;
                               const nextVal = Math.round((item.quantity + step) * 1000) / 1000;
                               updateQuantity(item.product.id!, nextVal);
                             }}
@@ -1107,22 +1116,25 @@ export const POSBillingView: React.FC<Props> = ({
                       {/* Quick 1-Tap Weight Chips for kg & litre */}
                       {isFractional && (
                         <div className="mt-2 pt-1.5 flex items-center gap-1 overflow-x-auto scrollbar-none">
-                          <span className="text-[9px] font-bold text-slate-400 shrink-0">Quick Qty:</span>
+                          <span className="text-[9px] font-bold text-slate-400 shrink-0">Retail:</span>
                           {(isKg
                             ? [
-                                { label: '25g', qty: 0.025 },
                                 { label: '50g', qty: 0.05 },
                                 { label: '100g', qty: 0.1 },
+                                { label: '200g', qty: 0.2 },
                                 { label: '250g', qty: 0.25 },
                                 { label: '500g', qty: 0.5 },
                                 { label: '1kg', qty: 1 },
+                                { label: '2kg', qty: 2 },
                               ]
                             : [
                                 { label: '50ml', qty: 0.05 },
                                 { label: '100ml', qty: 0.1 },
+                                { label: '200ml', qty: 0.2 },
                                 { label: '250ml', qty: 0.25 },
                                 { label: '500ml', qty: 0.5 },
                                 { label: '1L', qty: 1 },
+                                { label: '2L', qty: 2 },
                               ]
                           ).map((preset) => {
                             const isMatch = Math.abs(item.quantity - preset.qty) < 0.001;

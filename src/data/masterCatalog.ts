@@ -11,6 +11,71 @@ export interface CatalogItem {
 }
 
 export const MASTER_GROCERY_CATALOG: CatalogItem[] = [
+  // --- Loose Retail Commodities (Sold by kg / litre in Kirana) ---
+  {
+    name: 'Sugar / Shakkar / Chini (Loose)',
+    category: 'Grains & Sugar',
+    brand: 'Generic',
+    unit: 'kg',
+    barcode: '8900000000010',
+    typicalPurchasePrice: 38,
+    typicalSellingPrice: 44,
+  },
+  {
+    name: 'Loose Chakki Atta / Wheat Flour',
+    category: 'Atta & Flours',
+    brand: 'Generic',
+    unit: 'kg',
+    barcode: '8900000000027',
+    typicalPurchasePrice: 30,
+    typicalSellingPrice: 35,
+  },
+  {
+    name: 'Loose Besan / Gram Flour',
+    category: 'Atta & Flours',
+    brand: 'Generic',
+    unit: 'kg',
+    barcode: '8900000000034',
+    typicalPurchasePrice: 72,
+    typicalSellingPrice: 85,
+  },
+  {
+    name: 'Loose Toor Dal / Arhar Dal',
+    category: 'Dals & Pulses',
+    brand: 'Generic',
+    unit: 'kg',
+    barcode: '8900000000041',
+    typicalPurchasePrice: 130,
+    typicalSellingPrice: 145,
+  },
+  {
+    name: 'Loose Moong Dal',
+    category: 'Dals & Pulses',
+    brand: 'Generic',
+    unit: 'kg',
+    barcode: '8900000000058',
+    typicalPurchasePrice: 100,
+    typicalSellingPrice: 115,
+  },
+  {
+    name: 'Loose Mustard Oil / Sarson Tel',
+    category: 'Edible Oils & Ghee',
+    brand: 'Generic',
+    unit: 'litre',
+    barcode: '8900000000072',
+    typicalPurchasePrice: 138,
+    typicalSellingPrice: 155,
+  },
+  {
+    name: 'Loose Refined Soyabean Oil',
+    category: 'Edible Oils & Ghee',
+    brand: 'Generic',
+    unit: 'litre',
+    barcode: '8900000000089',
+    typicalPurchasePrice: 116,
+    typicalSellingPrice: 130,
+  },
+
   // --- Atta, Flours & Grains ---
   {
     name: 'Aashirvaad Shudh Chakki Atta (10kg)',

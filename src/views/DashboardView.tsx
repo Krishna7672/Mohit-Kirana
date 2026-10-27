@@ -116,6 +116,15 @@ export const DashboardView: React.FC<Props> = ({
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
 
+    const totalStockRetailValue = activeProducts.reduce(
+      (sum, p) => sum + Math.max(0, p.stockQuantity || 0) * (p.sellingPrice || 0),
+      0
+    );
+    const totalStockCostValue = activeProducts.reduce(
+      (sum, p) => sum + Math.max(0, p.stockQuantity || 0) * (p.purchasePrice || 0),
+      0
+    );
+
     return {
       todaySales,
       totalLifetimeSales,
@@ -127,6 +136,8 @@ export const DashboardView: React.FC<Props> = ({
       todayInwardCount: todayInward.length,
       totalInwardCount: inwardMovements.length,
       totalProducts: activeProducts.length,
+      totalStockRetailValue,
+      totalStockCostValue,
       lowStockCount: lowStockItems.length,
       lowStockItems,
       outOfStockCount: outOfStockItems.length,
@@ -368,25 +379,25 @@ export const DashboardView: React.FC<Props> = ({
           <div className="absolute bottom-0 inset-x-0 h-1 bg-rose-500" />
         </div>
 
-        {/* Stock Inward & Entries */}
+        {/* Total Stock Value */}
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Stock Inward / Entries</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Stock Value</span>
             <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
-              <Truck className="w-4 h-4" />
+              <Package className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2">
             <p className="text-2xl font-black text-blue-600 dark:text-blue-400">
-              {stats.todayInwardCount} <span className="text-xs font-normal text-slate-500">entries today</span>
+              {formatINR(stats.totalStockRetailValue)}
             </p>
             <div className="flex items-center justify-between text-xs mt-1 text-slate-500 dark:text-slate-400">
               <span>{stats.totalProducts} active SKUs</span>
               <button
                 onClick={() => setActiveTab('inventory')}
-                className="text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+                className="text-blue-600 dark:text-blue-400 font-semibold hover:underline flex items-center gap-0.5"
               >
-                {stats.totalInwardCount} total entries
+                Manage Stock <ChevronRight className="w-3 h-3" />
               </button>
             </div>
           </div>

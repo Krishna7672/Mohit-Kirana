@@ -189,13 +189,18 @@ Developer       : This app made by Nahata Software's
     reader.readAsText(file);
   };
 
-  // Reset Database to Demo Data
+  // Reset Database to Mohit Kirana Store Backup
   const handleLoadSampleData = async () => {
-    const confirmed = window.confirm('Load sample demonstration products and customers? Existing data will be preserved unless duplicated.');
-    if (confirmed) {
+    try {
       await seedDemoData();
-      alert('Sample demonstration inventory and party records loaded!');
-      window.location.reload();
+      localStorage.setItem('mohit_kirana_backup_loaded_v1', 'true');
+      setSaveMessage('Mohit Kirana store data (42 products, 4 parties, 9 bills) loaded successfully!');
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load backup';
+      alert(`Error loading data: ${msg}`);
     }
   };
 
@@ -623,10 +628,10 @@ Developer       : This app made by Nahata Software's
             <button
               type="button"
               onClick={handleLoadSampleData}
-              className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium hover:underline text-[11px]"
+              className="flex items-center gap-1.5 text-kirana-700 dark:text-kirana-400 font-bold hover:underline text-[11px]"
             >
               <RotateCcw className="w-3 h-3" />
-              <span>Load Sample Demo Data</span>
+              <span>Load Mohit Kirana Store Data</span>
             </button>
           </div>
 

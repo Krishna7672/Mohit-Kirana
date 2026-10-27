@@ -119,26 +119,49 @@ export const ML_PRESETS: WeightPreset[] = [
 ];
 
 export function formatQuantityWithSubUnit(qty: number, unit: string, subUnitLabel?: string): string {
-  if (subUnitLabel) return `${subUnitLabel} (${qty} ${unit})`;
+  // If an exact clean subUnitLabel was chosen (e.g. '250g', '50g', '250ml'), display only that weight
+  if (subUnitLabel && subUnitLabel.trim()) {
+    return subUnitLabel.trim();
+  }
+
   if (unit === 'kg') {
     if (qty < 1) {
       const g = Math.round(qty * 1000);
-      return `${g}g (${qty} kg)`;
+      return `${g}g`;
     }
     if (qty % 1 !== 0) {
       const kgPart = Math.floor(qty);
       const gPart = Math.round((qty - kgPart) * 1000);
-      return `${kgPart}kg ${gPart}g (${qty} kg)`;
+      if (kgPart === 0) return `${gPart}g`;
+      if (gPart === 0) return `${kgPart} kg`;
+      return `${kgPart}kg ${gPart}g`;
     }
     return `${qty} kg`;
   }
+
   if (unit === 'litre') {
     if (qty < 1) {
       const ml = Math.round(qty * 1000);
-      return `${ml}ml (${qty} L)`;
+      return `${ml}ml`;
+    }
+    if (qty % 1 !== 0) {
+      const lPart = Math.floor(qty);
+      const mlPart = Math.round((qty - lPart) * 1000);
+      if (lPart === 0) return `${mlPart}ml`;
+      if (mlPart === 0) return `${lPart} L`;
+      return `${lPart}L ${mlPart}ml`;
     }
     return `${qty} L`;
   }
+
+  if (unit === 'g') {
+    return `${qty}g`;
+  }
+
+  if (unit === 'ml') {
+    return `${qty}ml`;
+  }
+
   return `${qty} ${unit}`;
 }
 
