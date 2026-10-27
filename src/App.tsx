@@ -85,6 +85,13 @@ export function App() {
       syncLocalToSupabase().catch(() => {});
     }
 
+    // Periodic 3-minute heartbeat cloud sync when active
+    const syncInterval = setInterval(() => {
+      if (navigator.onLine) {
+        syncLocalToSupabase().catch(() => {});
+      }
+    }, 3 * 60 * 1000);
+
     // Listen for beforeinstallprompt for PWA
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
@@ -95,6 +102,7 @@ export function App() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      clearInterval(syncInterval);
     };
   }, []);
 

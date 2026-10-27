@@ -32,7 +32,7 @@ export function getSupabaseConfig(): SupabaseConfig {
     (import.meta.env.VITE_SUPABASE_EMAIL as string) ||
     '';
   const autoSyncStr = localStorage.getItem('kirana_supabase_auto_sync');
-  const autoSync = autoSyncStr === null ? false : autoSyncStr === 'true';
+  const autoSync = autoSyncStr === null ? Boolean(url && anonKey) : autoSyncStr === 'true';
 
   return { url, anonKey, email, autoSync };
 }
@@ -407,7 +407,7 @@ export async function restoreFromSupabase(): Promise<{
 }
 
 /**
- * Setup listeners for online/offline events to trigger auto-sync
+ * Setup listeners for online/offline and app resume events to trigger auto-sync
  */
 let isAutoSyncRegistered = false;
 
@@ -416,11 +416,11 @@ export function setupAutoOnlineSync(onStatusChange?: (status: { online: boolean;
   isAutoSyncRegistered = true;
 
   const handleOnline = async () => {
-    const { autoSync } = getSupabaseConfig();
-    if (!autoSync) return;
+    const { autoSync, url, anonKey } = getSupabaseConfig();
+    if (!autoSync || !url || !anonKey) return;
 
     if (onStatusChange) {
-      onStatusChange({ online: true, message: 'Online detected: Syncing to Supabase Cloud...' });
+      onStatusChange({ online: true, message: 'Online detected: Syncing to cloud...' });
     }
 
     try {
@@ -439,6 +439,34 @@ export function setupAutoOnlineSync(onStatusChange?: (status: { online: boolean;
     }
   };
 
+  const handleVisibility = () => {
+    if (document.visibilityState === 'visible' && isOnline()) {
+      handleOnline();
+    }
+  };
+
   window.addEventListener('online', handleOnline);
   window.addEventListener('offline', handleOffline);
+  document.addEventListener('visibilitychange', handleVisibility);
+}
+
+/**
+ * Trigger debounced cloud synchronization in the background after any write action
+ */
+let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function triggerBackgroundCloudSync(delayMs = 2500) {
+  if (typeof window === 'undefined') return;
+  const { url, anonKey, autoSync } = getSupabaseConfig();
+  if (!url || !anonKey || !autoSync || !isOnline()) return;
+
+  if (syncDebounceTimer) {
+    clearTimeout(syncDebounceTimer);
+  }
+
+  syncDebounceTimer = setTimeout(() => {
+    syncLocalToSupabase().catch((err) => {
+      console.warn('Background auto-sync failed:', err);
+    });
+  }, delayMs);
 }

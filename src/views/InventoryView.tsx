@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
+import { triggerBackgroundCloudSync } from '../db/supabaseSync';
 import type { Product, UnitType, StoreSettings } from '../types';
 import { formatINR, formatDate } from '../utils/formatters';
 import { exportProductsCSV, parseProductsCSV } from '../utils/csv';
@@ -397,6 +398,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     }
 
     setIsAddEditOpen(false);
+    triggerBackgroundCloudSync();
   };
 
   // Add multiple items from Master Catalog with 1-click
@@ -464,6 +466,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
         isArchived: !p.isArchived,
         updatedAt: new Date().toISOString(),
       });
+      triggerBackgroundCloudSync();
     }
   };
 
@@ -523,6 +526,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
     setAdjustQty('');
     setAdjustReason('');
     setAdjustingProduct(null);
+    triggerBackgroundCloudSync();
   };
 
   // CSV Import handler

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
+import { triggerBackgroundCloudSync } from '../db/supabaseSync';
 import type { Customer, Invoice, StoreSettings } from '../types';
 import {
   formatINR,
@@ -224,6 +225,7 @@ export const CustomerManagementView: React.FC<Props> = ({
     }
 
     setIsAddEditOpen(false);
+    triggerBackgroundCloudSync();
   };
 
   // Delete Customer
@@ -288,6 +290,7 @@ export const CustomerManagementView: React.FC<Props> = ({
     setIsRepaymentModalOpen(false);
     setRepaymentAmount('');
     setRepaymentNotes('');
+    triggerBackgroundCloudSync();
     alert(`Successfully recorded repayment of ${formatINR(amount)}. Remaining Udhar: ${formatINR(newBalance)}.`);
   };
 

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import confetti from 'canvas-confetti';
 import { db } from '../db';
+import { triggerBackgroundCloudSync } from '../db/supabaseSync';
 import type {
   Product,
   Customer,
@@ -576,6 +577,9 @@ export const POSBillingView: React.FC<Props> = ({
         message: `Sale completed! Bill #${invoiceNumber} saved.`,
       });
       setTimeout(() => setNotification(null), 3500);
+
+      // Trigger automatic background cloud sync immediately after bill creation
+      triggerBackgroundCloudSync();
 
       // Auto Open Receipt Print Modal
       if (createdInvoice) {
