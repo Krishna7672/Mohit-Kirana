@@ -18,25 +18,21 @@ export interface SupabaseConfig {
   autoSync: boolean;
 }
 
-const DEFAULT_SUPABASE_EMAIL = 'krushnajain79@gmail.com';
-const DEFAULT_SUPABASE_URL = 'https://nhrqhyevgqpacryrjsba.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ocnFoeWV2Z3FwYWNyeXJqc2JhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxMDkwMDAsImV4cCI6MjEwODY4NTAwMH0.WK_4z7HhFdYHec27AtkaWt0F9fQYj68aol7Dzg6xDQ0';
-
 export function getSupabaseConfig(): SupabaseConfig {
   const url =
     localStorage.getItem('kirana_supabase_url') ||
-    import.meta.env.VITE_SUPABASE_URL ||
-    DEFAULT_SUPABASE_URL;
+    (import.meta.env.VITE_SUPABASE_URL as string) ||
+    '';
   const anonKey =
     localStorage.getItem('kirana_supabase_anon_key') ||
-    import.meta.env.VITE_SUPABASE_ANON_KEY ||
-    DEFAULT_SUPABASE_ANON_KEY;
+    (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
+    '';
   const email =
     localStorage.getItem('kirana_supabase_email') ||
-    DEFAULT_SUPABASE_EMAIL;
+    (import.meta.env.VITE_SUPABASE_EMAIL as string) ||
+    '';
   const autoSyncStr = localStorage.getItem('kirana_supabase_auto_sync');
-  const autoSync = autoSyncStr === null ? true : autoSyncStr === 'true';
+  const autoSync = autoSyncStr === null ? false : autoSyncStr === 'true';
 
   return { url, anonKey, email, autoSync };
 }

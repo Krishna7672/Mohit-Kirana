@@ -1,6 +1,6 @@
 -- ====================================================================
 -- MOHIT KIRANA - SUPABASE CLOUD DATABASE SCHEMA (100% FREE TIER)
--- Account: krushnajain79@gmail.com
+-- Cloud backup & multi-device sync setup
 -- ====================================================================
 -- INSTRUCTIONS:
 -- 1. Open your Supabase Dashboard: https://supabase.com/dashboard

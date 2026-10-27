@@ -56,10 +56,10 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   currencySymbol: '₹',
   posTerminalName: 'POS-1',
   forceMobileLayout: true,
-  supabaseEmail: 'krushnajain79@gmail.com',
-  supabaseUrl: 'https://nhrqhyevgqpacryrjsba.supabase.co',
-  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ocnFoeWV2Z3FwYWNyeXJqc2JhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxMDkwMDAsImV4cCI6MjEwODY4NTAwMH0.WK_4z7HhFdYHec27AtkaWt0F9fQYj68aol7Dzg6xDQ0',
-  supabaseAutoSync: true,
+  supabaseEmail: '',
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+  supabaseAutoSync: false,
 };
 
 // Realistic grocery sample inventory
@@ -578,6 +578,15 @@ export async function exportDatabaseBackup(): Promise<string> {
     db.storeSettings.toArray()
   ]);
 
+  // Sanitize store settings to prevent leaking Supabase credentials or API keys in public backups
+  const sanitizedStoreSettings = storeSettings.map((s) => ({
+    ...s,
+    supabaseUrl: '',
+    supabaseAnonKey: '',
+    supabaseEmail: '',
+    geminiApiKey: ''
+  }));
+
   const backupData = {
     appName: 'Mohit Kirana',
     version: '1.1.0',
@@ -590,7 +599,7 @@ export async function exportDatabaseBackup(): Promise<string> {
       stockMovements,
       suppliers,
       purchases,
-      storeSettings
+      storeSettings: sanitizedStoreSettings
     }
   };
 
@@ -605,6 +614,9 @@ export async function importDatabaseBackup(jsonString: string): Promise<{ succes
     }
 
     const { data } = parsed;
+
+    // Preserve existing local cloud & API credentials if backup file does not contain them
+    const existingSettings = await db.storeSettings.get('main');
 
     await db.transaction('rw', [
       db.products,
@@ -635,7 +647,15 @@ export async function importDatabaseBackup(jsonString: string): Promise<{ succes
       if (data.suppliers?.length) await db.suppliers.bulkAdd(data.suppliers);
       if (data.purchases?.length) await db.purchases.bulkAdd(data.purchases);
       if (data.storeSettings?.length) {
-        await db.storeSettings.bulkAdd(data.storeSettings);
+        const imported = data.storeSettings[0];
+        const merged = {
+          ...imported,
+          supabaseUrl: imported.supabaseUrl || existingSettings?.supabaseUrl || '',
+          supabaseAnonKey: imported.supabaseAnonKey || existingSettings?.supabaseAnonKey || '',
+          supabaseEmail: imported.supabaseEmail || existingSettings?.supabaseEmail || '',
+          geminiApiKey: imported.geminiApiKey || existingSettings?.geminiApiKey || ''
+        };
+        await db.storeSettings.put(merged);
       } else {
         await db.storeSettings.put(DEFAULT_SETTINGS);
       }
