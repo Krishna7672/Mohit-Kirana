@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, DEFAULT_SETTINGS, initializeDatabase, autoScanAndSyncData } from './db';
-import { setupAutoOnlineSync, syncLocalToSupabase } from './db/supabaseSync';
+import { setupAutoOnlineSync, syncLocalToSupabase, restoreFromSupabase } from './db/supabaseSync';
 import type { Invoice, StoreSettings } from './types';
 import { Navigation, type ActiveTab } from './components/Navigation';
 import { DashboardView } from './views/DashboardView';
@@ -56,7 +56,21 @@ export function App() {
   // Initialize DB & auto-scan data on every refresh/app start
   useEffect(() => {
     initializeDatabase()
-      .then(() => handleTriggerSync())
+      .then(async () => {
+        const pCount = await db.products.count();
+        if (pCount === 0 && typeof navigator !== 'undefined' && navigator.onLine) {
+          try {
+            const res = await restoreFromSupabase();
+            if (res.success && res.restoredCounts?.products) {
+              setSyncStatus(`Auto-recovered ${res.restoredCounts.products} items from Supabase Cloud!`);
+              setTimeout(() => setSyncStatus(null), 4000);
+            }
+          } catch (e) {
+            console.warn('Auto cloud restore check failed:', e);
+          }
+        }
+        return handleTriggerSync();
+      })
       .catch(console.error);
 
     // Setup automatic background sync to Supabase when device is online
