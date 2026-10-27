@@ -19,16 +19,19 @@ export interface SupabaseConfig {
 }
 
 const DEFAULT_SUPABASE_EMAIL = 'krushnajain79@gmail.com';
+const DEFAULT_SUPABASE_URL = 'https://nhrqhyevgqpacryrjsba.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ocnFoeWV2Z3FwYWNyeXJqc2JhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxMDkwMDAsImV4cCI6MjEwODY4NTAwMH0.WK_4z7HhFdYHec27AtkaWt0F9fQYj68aol7Dzg6xDQ0';
 
 export function getSupabaseConfig(): SupabaseConfig {
   const url =
     localStorage.getItem('kirana_supabase_url') ||
     import.meta.env.VITE_SUPABASE_URL ||
-    '';
+    DEFAULT_SUPABASE_URL;
   const anonKey =
     localStorage.getItem('kirana_supabase_anon_key') ||
     import.meta.env.VITE_SUPABASE_ANON_KEY ||
-    '';
+    DEFAULT_SUPABASE_ANON_KEY;
   const email =
     localStorage.getItem('kirana_supabase_email') ||
     DEFAULT_SUPABASE_EMAIL;

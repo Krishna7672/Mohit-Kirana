@@ -57,6 +57,8 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   posTerminalName: 'POS-1',
   forceMobileLayout: true,
   supabaseEmail: 'krushnajain79@gmail.com',
+  supabaseUrl: 'https://nhrqhyevgqpacryrjsba.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ocnFoeWV2Z3FwYWNyeXJqc2JhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxMDkwMDAsImV4cCI6MjEwODY4NTAwMH0.WK_4z7HhFdYHec27AtkaWt0F9fQYj68aol7Dzg6xDQ0',
   supabaseAutoSync: true,
 };
 
