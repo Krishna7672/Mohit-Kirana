@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, DEFAULT_SETTINGS, initializeDatabase, autoScanAndSyncData } from './db';
+import { setupAutoOnlineSync, syncLocalToSupabase } from './db/supabaseSync';
 import type { Invoice, StoreSettings } from './types';
 import { Navigation, type ActiveTab } from './components/Navigation';
 import { DashboardView } from './views/DashboardView';
@@ -57,6 +58,18 @@ export function App() {
     initializeDatabase()
       .then(() => handleTriggerSync())
       .catch(console.error);
+
+    // Setup automatic background sync to Supabase when device is online
+    setupAutoOnlineSync((status) => {
+      if (status.message) {
+        setSyncStatus(status.message);
+        setTimeout(() => setSyncStatus(null), 4000);
+      }
+    });
+
+    if (navigator.onLine) {
+      syncLocalToSupabase().catch(() => {});
+    }
 
     // Listen for beforeinstallprompt for PWA
     const handleBeforeInstall = (e: Event) => {

@@ -13,7 +13,8 @@ import {
   Moon,
   Sun,
   Lock,
-  RefreshCw
+  RefreshCw,
+  Cloud
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -124,10 +125,10 @@ export const Navigation: React.FC<Props> = ({
         {/* Desktop Sidebar Footer */}
         <div className="p-4 border-t border-kirana-900/80 bg-kirana-900/30 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-kirana-300">Offline-Ready (Dexie)</span>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-semibold text-emerald-300">Synced</span>
+            <span className="text-[11px] text-kirana-300">Offline-First (Dexie)</span>
+            <div className="flex items-center gap-1.5" title="Local IndexedDB with Supabase Cloud Sync">
+              <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-[11px] font-semibold text-emerald-300">Cloud Sync</span>
             </div>
           </div>
 

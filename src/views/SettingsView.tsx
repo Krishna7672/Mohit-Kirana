@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   db,
   DEFAULT_SETTINGS,
@@ -8,6 +8,14 @@ import {
   purgeDemoData,
   autoScanAndSyncData
 } from '../db';
+import {
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  testSupabaseConnection,
+  syncLocalToSupabase,
+  restoreFromSupabase,
+  isOnline
+} from '../db/supabaseSync';
 import type { StoreSettings } from '../types';
 import {
   Settings,
@@ -28,7 +36,15 @@ import {
   Monitor,
   HelpCircle,
   FileText,
-  X
+  X,
+  Cloud,
+  CloudUpload,
+  CloudDownload,
+  Key,
+  Globe,
+  Copy,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 
 interface Props {
@@ -70,6 +86,28 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
   // Multi-Device Access Guide Modal
   const [showDeviceGuideModal, setShowDeviceGuideModal] = useState(false);
 
+  // Supabase Cloud Sync state
+  const initialSupabaseConfig = getSupabaseConfig();
+  const [supabaseUrl, setSupabaseUrl] = useState(
+    settings.supabaseUrl || initialSupabaseConfig.url || ''
+  );
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState(
+    settings.supabaseAnonKey || initialSupabaseConfig.anonKey || ''
+  );
+  const [supabaseEmail, setSupabaseEmail] = useState(
+    settings.supabaseEmail || initialSupabaseConfig.email || 'krushnajain79@gmail.com'
+  );
+  const [supabaseAutoSync, setSupabaseAutoSync] = useState(
+    settings.supabaseAutoSync ?? initialSupabaseConfig.autoSync
+  );
+  const [supabaseStatusMessage, setSupabaseStatusMessage] = useState<string | null>(null);
+  const [isSupabaseTesting, setIsSupabaseTesting] = useState(false);
+  const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
+  const [lastCloudSync, setLastCloudSync] = useState<string | null>(
+    localStorage.getItem('kirana_last_supabase_sync')
+  );
+  const [copiedSql, setCopiedSql] = useState(false);
+
   // Status notification
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -96,16 +134,117 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
       geminiApiKey: geminiApiKey.trim(),
       posTerminalName: posTerminalName.trim() || 'POS-1',
       forceMobileLayout,
+      supabaseUrl: supabaseUrl.trim(),
+      supabaseAnonKey: supabaseAnonKey.trim(),
+      supabaseEmail: supabaseEmail.trim(),
+      supabaseAutoSync,
     };
 
     localStorage.setItem('kirana_gemini_api_key', geminiApiKey.trim());
     localStorage.setItem('kirana_pos_terminal', posTerminalName.trim() || 'POS-1');
     localStorage.setItem('kirana_force_mobile_layout', String(forceMobileLayout));
 
+    saveSupabaseConfig({
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+      email: supabaseEmail,
+      autoSync: supabaseAutoSync,
+    });
+
     await db.storeSettings.put(updated);
     onSettingsUpdated(updated);
-    setSaveMessage('Settings & Terminal details updated successfully!');
-    setTimeout(() => setSaveMessage(null), 3000);
+    setSaveMessage('Settings & Supabase Cloud configuration saved successfully!');
+    setTimeout(() => setSaveMessage(null), 3500);
+
+    // If online and auto-sync is on and credentials exist, trigger quick sync
+    if (isOnline() && supabaseAutoSync && supabaseUrl.trim() && supabaseAnonKey.trim()) {
+      syncLocalToSupabase().then((res) => {
+        if (res.success) {
+          setLastCloudSync(new Date().toISOString());
+        }
+      });
+    }
+  };
+
+  const handleTestSupabase = async () => {
+    setIsSupabaseTesting(true);
+    setSupabaseStatusMessage(null);
+    saveSupabaseConfig({
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+      email: supabaseEmail,
+      autoSync: supabaseAutoSync,
+    });
+    const res = await testSupabaseConnection();
+    setSupabaseStatusMessage(res.message);
+    setIsSupabaseTesting(false);
+  };
+
+  const handleSyncToSupabase = async () => {
+    setIsSupabaseSyncing(true);
+    setSupabaseStatusMessage(null);
+    saveSupabaseConfig({
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+      email: supabaseEmail,
+      autoSync: supabaseAutoSync,
+    });
+    const res = await syncLocalToSupabase();
+    setSupabaseStatusMessage(res.message);
+    if (res.success) {
+      setLastCloudSync(new Date().toISOString());
+    }
+    setIsSupabaseSyncing(false);
+  };
+
+  const handleRestoreFromSupabase = async () => {
+    const confirm = window.confirm(
+      'Download and restore data from Supabase Cloud into this device? This will merge your cloud records into local memory without deleting existing items.'
+    );
+    if (!confirm) return;
+
+    setIsSupabaseSyncing(true);
+    setSupabaseStatusMessage(null);
+    const res = await restoreFromSupabase();
+    setSupabaseStatusMessage(res.message);
+    setIsSupabaseSyncing(false);
+    if (res.success) {
+      setTimeout(() => window.location.reload(), 1500);
+    }
+  };
+
+  const handleCopySqlSchema = () => {
+    const sql = `-- MOHIT KIRANA SUPABASE CLOUD SETUP (100% FREE)
+CREATE TABLE IF NOT EXISTS store_settings (id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS products (id BIGINT PRIMARY KEY, name TEXT NOT NULL, category TEXT, barcode TEXT, selling_price NUMERIC, stock_quantity NUMERIC, unit TEXT, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS customers (id BIGINT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, outstanding_udhar NUMERIC DEFAULT 0, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS invoices (id BIGINT PRIMARY KEY, invoice_number TEXT UNIQUE NOT NULL, customer_name TEXT, customer_phone TEXT, total_amount NUMERIC, payment_method TEXT, date TIMESTAMPTZ, data JSONB NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS udhar_ledger (id BIGINT PRIMARY KEY, customer_id BIGINT, invoice_id BIGINT, amount NUMERIC, date TIMESTAMPTZ, data JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS stock_movements (id BIGINT PRIMARY KEY, product_id BIGINT, type TEXT, quantity_change NUMERIC, date TIMESTAMPTZ, data JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS suppliers (id BIGINT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, data JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS purchases (id BIGINT PRIMARY KEY, supplier_id BIGINT, purchase_invoice_no TEXT, total_cost NUMERIC, date TIMESTAMPTZ, data JSONB NOT NULL);
+
+ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE udhar_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public access store_settings" ON store_settings; CREATE POLICY "Public access store_settings" ON store_settings FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public access products" ON products; CREATE POLICY "Public access products" ON products FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public access customers" ON customers; CREATE POLICY "Public access customers" ON customers FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public access invoices" ON invoices; CREATE POLICY "Public access invoices" ON invoices FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public access udhar_ledger" ON udhar_ledger; CREATE POLICY "Public access udhar_ledger" ON udhar_ledger FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public access stock_movements" ON stock_movements; CREATE POLICY "Public access stock_movements" ON stock_movements FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public access suppliers" ON suppliers; CREATE POLICY "Public access suppliers" ON suppliers FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public access purchases" ON purchases; CREATE POLICY "Public access purchases" ON purchases FOR ALL USING (true) WITH CHECK (true);
+`;
+    navigator.clipboard.writeText(sql);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 3000);
   };
 
   // Download Store Profile Details
@@ -532,6 +671,178 @@ Developer       : This app made by Nahata Software's
           <span>Save Store Settings</span>
         </button>
       </form>
+
+      {/* Supabase Free Cloud Backup & Auto-Sync Section */}
+      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-700 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Cloud className="w-5 h-5 text-emerald-600" />
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+                <span>Supabase Cloud Auto-Sync</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400 font-bold border border-emerald-300">
+                  100% Free Forever
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Safeguard all products, bills & udhar to cloud automatically when online (Account: {supabaseEmail})
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                isOnline()
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300'
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isOnline() ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                }`}
+              />
+              <span>{isOnline() ? 'Online (Ready to Sync)' : 'Offline (Saving Locally)'}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Status Message */}
+        {supabaseStatusMessage && (
+          <div
+            className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
+              supabaseStatusMessage.includes('error') || supabaseStatusMessage.includes('failed') || supabaseStatusMessage.includes('missing')
+                ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
+            }`}
+          >
+            <Info className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{supabaseStatusMessage}</span>
+            <button onClick={() => setSupabaseStatusMessage(null)} className="hover:opacity-75">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Credentials Form */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="space-y-1">
+            <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <span>Supabase Project URL</span>
+              <span className="text-[10px] text-slate-400">e.g. https://xxx.supabase.co</span>
+            </label>
+            <input
+              type="text"
+              placeholder="https://xyzproject.supabase.co"
+              value={supabaseUrl}
+              onChange={(e) => setSupabaseUrl(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-mono text-xs"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <span>Supabase Anon Public API Key</span>
+              <span className="text-[10px] text-slate-400">Project Settings &gt; API</span>
+            </label>
+            <input
+              type="password"
+              placeholder="eyJhbGciOi..."
+              value={supabaseAnonKey}
+              onChange={(e) => setSupabaseAnonKey(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-mono text-xs"
+            />
+          </div>
+        </div>
+
+        {/* Options & Account Reference */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={supabaseAutoSync}
+              onChange={(e) => setSupabaseAutoSync(e.target.checked)}
+              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 dark:border-slate-600"
+            />
+            <span className="text-slate-700 dark:text-slate-300 font-medium">
+              Automatically sync local records to Supabase whenever device is online
+            </span>
+          </label>
+
+          {lastCloudSync && (
+            <span className="text-[11px] text-slate-400">
+              Last synced: {new Date(lastCloudSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+
+        {/* Cloud Actions Buttons */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 text-xs">
+          <button
+            type="button"
+            onClick={handleTestSupabase}
+            disabled={isSupabaseTesting}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-800 dark:text-slate-200 font-bold rounded-xl transition-all active:scale-98 disabled:opacity-50"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>{isSupabaseTesting ? 'Testing...' : 'Test Connection'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSyncToSupabase}
+            disabled={isSupabaseSyncing}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl shadow-sm transition-all active:scale-98 disabled:opacity-50"
+          >
+            <CloudUpload className="w-3.5 h-3.5" />
+            <span>{isSupabaseSyncing ? 'Syncing...' : 'Sync to Cloud Now'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleRestoreFromSupabase}
+            disabled={isSupabaseSyncing}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-sm transition-all active:scale-98 disabled:opacity-50"
+          >
+            <CloudDownload className="w-3.5 h-3.5" />
+            <span>Restore from Cloud</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCopySqlSchema}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-kirana-50 hover:bg-kirana-100 dark:bg-kirana-950/40 text-kirana-800 dark:text-kirana-300 font-bold rounded-xl border border-kirana-200 dark:border-kirana-800 transition-all active:scale-98"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>{copiedSql ? '✓ SQL Copied!' : 'Copy SQL Schema'}</span>
+          </button>
+        </div>
+
+        {/* 1-Minute Setup Guide for Supabase */}
+        <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-400 space-y-1.5">
+          <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>How to connect your Free Supabase Account ({supabaseEmail}):</span>
+            </span>
+            <a
+              href="https://supabase.com/dashboard"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-kirana-600 hover:underline flex items-center gap-1 text-[11px]"
+            >
+              <span>Open Supabase</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <ol className="list-decimal list-inside space-y-1 pl-1">
+            <li>Log in to <strong className="text-slate-700 dark:text-slate-300">supabase.com</strong> using your email <strong>{supabaseEmail}</strong> and click <strong>New Project</strong>.</li>
+            <li>In left menu, click <strong>SQL Editor</strong> &gt; <strong>New Query</strong>, click <strong>"Copy SQL Schema"</strong> above, paste it and click <strong>Run</strong>.</li>
+            <li>In left menu, click <strong>Project Settings (⚙️) &gt; API</strong>, copy the <strong>Project URL</strong> and <strong>anon public API key</strong>, paste them in the fields above and click <strong>"Save Store Settings"</strong>!</li>
+          </ol>
+        </div>
+      </div>
 
       {/* Offline Data Management & Full Database Backup / Restore */}
       <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">

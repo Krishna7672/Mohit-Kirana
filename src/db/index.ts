@@ -56,6 +56,8 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   currencySymbol: '₹',
   posTerminalName: 'POS-1',
   forceMobileLayout: true,
+  supabaseEmail: 'krushnajain79@gmail.com',
+  supabaseAutoSync: true,
 };
 
 // Realistic grocery sample inventory
@@ -454,11 +456,6 @@ export async function autoScanAndSyncData(): Promise<{
   message: string;
 }> {
   try {
-    // 1. First, check if demo data needs to be purged
-    if (!localStorage.getItem('mohit_demo_purged_v1')) {
-      await purgeDemoData();
-    }
-
     const productsCount = await db.products.count();
     const customersCount = await db.customers.count();
     const invoicesCount = await db.invoices.count();
@@ -466,66 +463,62 @@ export async function autoScanAndSyncData(): Promise<{
     const snapshotKey = 'mohit_kirana_offline_snapshot';
     const snapshotStr = localStorage.getItem(snapshotKey);
 
-    // 2. If Dexie is empty, load from snapshot or Mohit Kirana backup!
-    if (productsCount === 0 && customersCount === 0) {
-      let dataToLoad: any = null;
-      if (snapshotStr) {
-        try {
-          const parsed = JSON.parse(snapshotStr);
-          if (parsed?.data?.products?.length) {
-            dataToLoad = parsed.data;
-          }
-        } catch {
-          // ignore
+    // 1. If Dexie is completely empty but an offline snapshot exists in localStorage, restore it
+    if (productsCount === 0 && customersCount === 0 && snapshotStr) {
+      try {
+        const parsed = JSON.parse(snapshotStr);
+        if (parsed?.data?.products?.length) {
+          const { data } = parsed;
+          await db.transaction('rw', [
+            db.products,
+            db.customers,
+            db.invoices,
+            db.udharLedger,
+            db.stockMovements,
+            db.suppliers,
+            db.purchases,
+            db.storeSettings
+          ], async () => {
+            if (data.products?.length) await db.products.bulkAdd(data.products);
+            if (data.customers?.length) await db.customers.bulkAdd(data.customers);
+            if (data.invoices?.length) await db.invoices.bulkAdd(data.invoices);
+            if (data.udharLedger?.length) await db.udharLedger.bulkAdd(data.udharLedger);
+            if (data.stockMovements?.length) await db.stockMovements.bulkAdd(data.stockMovements);
+            if (data.suppliers?.length) await db.suppliers.bulkAdd(data.suppliers);
+            if (data.purchases?.length) await db.purchases.bulkAdd(data.purchases);
+            if (data.storeSettings) {
+              if (Array.isArray(data.storeSettings) && data.storeSettings.length) {
+                await db.storeSettings.bulkPut(data.storeSettings);
+              } else if (typeof data.storeSettings === 'object') {
+                await db.storeSettings.put(data.storeSettings);
+              }
+            }
+          });
+
+          const newPCount = await db.products.count();
+          const newCCount = await db.customers.count();
+          const newICount = await db.invoices.count();
+
+          return {
+            success: true,
+            productsCount: newPCount,
+            customersCount: newCCount,
+            invoicesCount: newICount,
+            restoredFromSnapshot: true,
+            message: `Restored ${newPCount} products and ${newCCount} parties from local snapshot.`
+          };
         }
-      }
-
-      if (!dataToLoad && sampleBackupData?.data?.products?.length) {
-        dataToLoad = sampleBackupData.data;
-      }
-
-      if (dataToLoad) {
-        await db.transaction('rw', [
-          db.products,
-          db.customers,
-          db.invoices,
-          db.udharLedger,
-          db.stockMovements,
-          db.suppliers,
-          db.purchases,
-          db.storeSettings
-        ], async () => {
-          if (dataToLoad.products?.length) await db.products.bulkAdd(dataToLoad.products);
-          if (dataToLoad.customers?.length) await db.customers.bulkAdd(dataToLoad.customers);
-          if (dataToLoad.invoices?.length) await db.invoices.bulkAdd(dataToLoad.invoices);
-          if (dataToLoad.udharLedger?.length) await db.udharLedger.bulkAdd(dataToLoad.udharLedger);
-          if (dataToLoad.stockMovements?.length) await db.stockMovements.bulkAdd(dataToLoad.stockMovements);
-          if (dataToLoad.suppliers?.length) await db.suppliers.bulkAdd(dataToLoad.suppliers);
-          if (dataToLoad.purchases?.length) await db.purchases.bulkAdd(dataToLoad.purchases);
-          if (dataToLoad.storeSettings?.length) {
-            await db.storeSettings.bulkPut(dataToLoad.storeSettings);
-          }
-        });
-
-        const newPCount = await db.products.count();
-        const newCCount = await db.customers.count();
-        const newICount = await db.invoices.count();
-
-        return {
-          success: true,
-          productsCount: newPCount,
-          customersCount: newCCount,
-          invoicesCount: newICount,
-          restoredFromSnapshot: true,
-          message: `Auto-loaded ${newPCount} products and ${newCCount} parties from Mohit Kirana data.`
-        };
+      } catch (e) {
+        console.warn('Could not restore from snapshot:', e);
       }
     }
 
-    // 3. Otherwise, update local backup snapshot with current live database state
-    const currentBackup = await exportDatabaseBackup();
-    localStorage.setItem(snapshotKey, currentBackup);
-    localStorage.setItem('mohit_kirana_last_sync', new Date().toISOString());
+    // 2. If records exist, update local backup snapshot with current live database state
+    if (productsCount > 0 || customersCount > 0 || invoicesCount > 0) {
+      const currentBackup = await exportDatabaseBackup();
+      localStorage.setItem(snapshotKey, currentBackup);
+      localStorage.setItem('mohit_kirana_last_sync', new Date().toISOString());
+    }
 
     return {
       success: true,
@@ -554,14 +547,8 @@ export async function initializeDatabase() {
     await db.storeSettings.put(DEFAULT_SETTINGS);
   }
 
-  // Auto-load Mohit Kirana store backup data if not yet initialized
-  if (!localStorage.getItem('mohit_kirana_backup_loaded_v1')) {
-    await importDatabaseBackup(JSON.stringify(sampleBackupData));
-    localStorage.setItem('mohit_kirana_backup_loaded_v1', 'true');
-  } else {
-    // Automatic data scan, sync and demo purge on initialization
-    await autoScanAndSyncData();
-  }
+  // Safe data verification on startup - NEVER clears or overwrites user data!
+  await autoScanAndSyncData();
 }
 
 export async function seedDemoData() {

@@ -153,6 +153,11 @@ export interface StoreSettings {
   posTerminalName?: string; // e.g. 'POS-1', 'POS-2'
   forceMobileLayout?: boolean;
   lastBackupDate?: string;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
+  supabaseEmail?: string;
+  supabaseAutoSync?: boolean;
+  lastSupabaseSync?: string;
 }
 
 export interface CartItem {
