@@ -40,6 +40,12 @@ import sampleBackupData from '../data/sampleBackup.json';
 
 export const db = new MohitKiranaDB();
 
+import {
+  DEFAULT_SUPABASE_URL,
+  DEFAULT_SUPABASE_ANON_KEY,
+  DEFAULT_SUPABASE_EMAIL
+} from './constants';
+
 export const DEFAULT_SETTINGS: StoreSettings = {
   id: 'main',
   shopName: 'Mohit Kirana',
@@ -56,10 +62,10 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   currencySymbol: '₹',
   posTerminalName: 'POS-1',
   forceMobileLayout: true,
-  supabaseEmail: '',
-  supabaseUrl: '',
-  supabaseAnonKey: '',
-  supabaseAutoSync: false,
+  supabaseEmail: DEFAULT_SUPABASE_EMAIL,
+  supabaseUrl: DEFAULT_SUPABASE_URL,
+  supabaseAnonKey: DEFAULT_SUPABASE_ANON_KEY,
+  supabaseAutoSync: true,
 };
 
 // Realistic grocery sample inventory
@@ -547,6 +553,17 @@ export async function initializeDatabase() {
   const settingsCount = await db.storeSettings.count();
   if (settingsCount === 0) {
     await db.storeSettings.put(DEFAULT_SETTINGS);
+  } else {
+    // If settings already exist in local IndexedDB, ensure Supabase credentials are valid
+    const existing = await db.storeSettings.get('main');
+    if (existing && (!existing.supabaseUrl || !existing.supabaseAnonKey)) {
+      await db.storeSettings.update('main', {
+        supabaseUrl: existing.supabaseUrl || DEFAULT_SETTINGS.supabaseUrl,
+        supabaseAnonKey: existing.supabaseAnonKey || DEFAULT_SETTINGS.supabaseAnonKey,
+        supabaseEmail: existing.supabaseEmail || DEFAULT_SETTINGS.supabaseEmail,
+        supabaseAutoSync: existing.supabaseAutoSync ?? DEFAULT_SETTINGS.supabaseAutoSync,
+      });
+    }
   }
 
   // Safe data verification on startup - NEVER clears or overwrites user data!

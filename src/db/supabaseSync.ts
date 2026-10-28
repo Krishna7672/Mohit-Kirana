@@ -18,19 +18,23 @@ export interface SupabaseConfig {
   autoSync: boolean;
 }
 
+import {
+  DEFAULT_SUPABASE_URL,
+  DEFAULT_SUPABASE_ANON_KEY,
+  DEFAULT_SUPABASE_EMAIL
+} from './constants';
+
+export { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_EMAIL };
+
 export function getSupabaseConfig(): SupabaseConfig {
-  const url =
-    localStorage.getItem('kirana_supabase_url') ||
-    (import.meta.env.VITE_SUPABASE_URL as string) ||
-    '';
-  const anonKey =
-    localStorage.getItem('kirana_supabase_anon_key') ||
-    (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-    '';
-  const email =
-    localStorage.getItem('kirana_supabase_email') ||
-    (import.meta.env.VITE_SUPABASE_EMAIL as string) ||
-    '';
+  const storedUrl = localStorage.getItem('kirana_supabase_url');
+  const storedAnonKey = localStorage.getItem('kirana_supabase_anon_key');
+  const storedEmail = localStorage.getItem('kirana_supabase_email');
+
+  const url = storedUrl && storedUrl.trim() ? storedUrl.trim() : DEFAULT_SUPABASE_URL;
+  const anonKey = storedAnonKey && storedAnonKey.trim() ? storedAnonKey.trim() : DEFAULT_SUPABASE_ANON_KEY;
+  const email = storedEmail && storedEmail.trim() ? storedEmail.trim() : DEFAULT_SUPABASE_EMAIL;
+
   const autoSyncStr = localStorage.getItem('kirana_supabase_auto_sync');
   const autoSync = autoSyncStr === null ? Boolean(url && anonKey) : autoSyncStr === 'true';
 
@@ -39,13 +43,16 @@ export function getSupabaseConfig(): SupabaseConfig {
 
 export function saveSupabaseConfig(config: Partial<SupabaseConfig>) {
   if (config.url !== undefined) {
-    localStorage.setItem('kirana_supabase_url', config.url.trim());
+    const val = config.url.trim() || DEFAULT_SUPABASE_URL;
+    localStorage.setItem('kirana_supabase_url', val);
   }
   if (config.anonKey !== undefined) {
-    localStorage.setItem('kirana_supabase_anon_key', config.anonKey.trim());
+    const val = config.anonKey.trim() || DEFAULT_SUPABASE_ANON_KEY;
+    localStorage.setItem('kirana_supabase_anon_key', val);
   }
   if (config.email !== undefined) {
-    localStorage.setItem('kirana_supabase_email', config.email.trim());
+    const val = config.email.trim() || DEFAULT_SUPABASE_EMAIL;
+    localStorage.setItem('kirana_supabase_email', val);
   }
   if (config.autoSync !== undefined) {
     localStorage.setItem('kirana_supabase_auto_sync', String(config.autoSync));

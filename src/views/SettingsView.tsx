@@ -41,8 +41,14 @@ import {
   CloudUpload,
   CloudDownload,
   Key,
-  Globe
+  Globe,
+  ChevronDown
 } from 'lucide-react';
+import {
+  DEFAULT_SUPABASE_URL,
+  DEFAULT_SUPABASE_ANON_KEY,
+  DEFAULT_SUPABASE_EMAIL
+} from '../db/constants';
 
 interface Props {
   settings: StoreSettings;
@@ -86,17 +92,18 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
   // Supabase Cloud Sync state
   const initialSupabaseConfig = getSupabaseConfig();
   const [supabaseUrl, setSupabaseUrl] = useState(
-    settings.supabaseUrl || initialSupabaseConfig.url || ''
+    settings.supabaseUrl || initialSupabaseConfig.url || DEFAULT_SUPABASE_URL
   );
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(
-    settings.supabaseAnonKey || initialSupabaseConfig.anonKey || ''
+    settings.supabaseAnonKey || initialSupabaseConfig.anonKey || DEFAULT_SUPABASE_ANON_KEY
   );
   const [supabaseEmail, setSupabaseEmail] = useState(
-    settings.supabaseEmail || initialSupabaseConfig.email || ''
+    settings.supabaseEmail || initialSupabaseConfig.email || DEFAULT_SUPABASE_EMAIL
   );
   const [supabaseAutoSync, setSupabaseAutoSync] = useState(
     settings.supabaseAutoSync ?? initialSupabaseConfig.autoSync
   );
+  const [showCloudConfig, setShowCloudConfig] = useState(false);
   const [supabaseStatusMessage, setSupabaseStatusMessage] = useState<string | null>(null);
   const [isSupabaseTesting, setIsSupabaseTesting] = useState(false);
   const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
@@ -110,9 +117,26 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
   // Backup file input ref
   const backupInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Reset to default cloud
+  const handleResetToDefaultCloud = () => {
+    setSupabaseUrl(DEFAULT_SUPABASE_URL);
+    setSupabaseAnonKey(DEFAULT_SUPABASE_ANON_KEY);
+    setSupabaseEmail(DEFAULT_SUPABASE_EMAIL);
+    saveSupabaseConfig({
+      url: DEFAULT_SUPABASE_URL,
+      anonKey: DEFAULT_SUPABASE_ANON_KEY,
+      email: DEFAULT_SUPABASE_EMAIL,
+    });
+    setSupabaseStatusMessage('Reset to default Mohit Kirana Cloud credentials!');
+  };
+
   // Save Store Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const finalSupabaseUrl = supabaseUrl.trim() || DEFAULT_SUPABASE_URL;
+    const finalSupabaseAnonKey = supabaseAnonKey.trim() || DEFAULT_SUPABASE_ANON_KEY;
+    const finalSupabaseEmail = supabaseEmail.trim() || DEFAULT_SUPABASE_EMAIL;
 
     const updated: StoreSettings = {
       ...settings,
@@ -130,9 +154,9 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
       geminiApiKey: geminiApiKey.trim(),
       posTerminalName: posTerminalName.trim() || 'POS-1',
       forceMobileLayout,
-      supabaseUrl: supabaseUrl.trim(),
-      supabaseAnonKey: supabaseAnonKey.trim(),
-      supabaseEmail: supabaseEmail.trim(),
+      supabaseUrl: finalSupabaseUrl,
+      supabaseAnonKey: finalSupabaseAnonKey,
+      supabaseEmail: finalSupabaseEmail,
       supabaseAutoSync,
     };
 
@@ -141,9 +165,9 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
     localStorage.setItem('kirana_force_mobile_layout', String(forceMobileLayout));
 
     saveSupabaseConfig({
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-      email: supabaseEmail,
+      url: finalSupabaseUrl,
+      anonKey: finalSupabaseAnonKey,
+      email: finalSupabaseEmail,
       autoSync: supabaseAutoSync,
     });
 
@@ -153,7 +177,7 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
     setTimeout(() => setSaveMessage(null), 3500);
 
     // If online and auto-sync is on and credentials exist, trigger quick sync
-    if (isOnline() && supabaseAutoSync && supabaseUrl.trim() && supabaseAnonKey.trim()) {
+    if (isOnline() && supabaseAutoSync && finalSupabaseUrl && finalSupabaseAnonKey) {
       syncLocalToSupabase().then((res) => {
         if (res.success) {
           setLastCloudSync(new Date().toISOString());
@@ -165,10 +189,13 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
   const handleTestSupabase = async () => {
     setIsSupabaseTesting(true);
     setSupabaseStatusMessage(null);
+    const finalUrl = supabaseUrl.trim() || DEFAULT_SUPABASE_URL;
+    const finalAnonKey = supabaseAnonKey.trim() || DEFAULT_SUPABASE_ANON_KEY;
+    const finalEmail = supabaseEmail.trim() || DEFAULT_SUPABASE_EMAIL;
     saveSupabaseConfig({
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-      email: supabaseEmail,
+      url: finalUrl,
+      anonKey: finalAnonKey,
+      email: finalEmail,
       autoSync: supabaseAutoSync,
     });
     const res = await testSupabaseConnection();
@@ -179,10 +206,13 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
   const handleSyncToSupabase = async () => {
     setIsSupabaseSyncing(true);
     setSupabaseStatusMessage(null);
+    const finalUrl = supabaseUrl.trim() || DEFAULT_SUPABASE_URL;
+    const finalAnonKey = supabaseAnonKey.trim() || DEFAULT_SUPABASE_ANON_KEY;
+    const finalEmail = supabaseEmail.trim() || DEFAULT_SUPABASE_EMAIL;
     saveSupabaseConfig({
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-      email: supabaseEmail,
+      url: finalUrl,
+      anonKey: finalAnonKey,
+      email: finalEmail,
       autoSync: supabaseAutoSync,
     });
     const res = await syncLocalToSupabase();
@@ -201,6 +231,15 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
 
     setIsSupabaseSyncing(true);
     setSupabaseStatusMessage(null);
+    const finalUrl = supabaseUrl.trim() || DEFAULT_SUPABASE_URL;
+    const finalAnonKey = supabaseAnonKey.trim() || DEFAULT_SUPABASE_ANON_KEY;
+    const finalEmail = supabaseEmail.trim() || DEFAULT_SUPABASE_EMAIL;
+    saveSupabaseConfig({
+      url: finalUrl,
+      anonKey: finalAnonKey,
+      email: finalEmail,
+      autoSync: supabaseAutoSync,
+    });
     const res = await restoreFromSupabase();
     setSupabaseStatusMessage(res.message);
     setIsSupabaseSyncing(false);
@@ -741,6 +780,76 @@ Developer       : This app made by Nahata Software's
             <Globe className="w-3.5 h-3.5" />
             <span>{isSupabaseTesting ? 'Checking...' : 'Check Cloud Connection'}</span>
           </button>
+        </div>
+
+        {/* Toggle to view/edit Cloud Credentials */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
+          <button
+            type="button"
+            onClick={() => setShowCloudConfig(!showCloudConfig)}
+            className="flex items-center justify-between w-full py-1 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+          >
+            <span className="flex items-center gap-1.5 font-medium">
+              <Key className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Supabase Connection Settings</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                Active
+              </span>
+            </span>
+            <span className="text-[11px] text-kirana-600 font-semibold flex items-center gap-1">
+              <span>{showCloudConfig ? 'Hide Settings' : 'View / Change Keys'}</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showCloudConfig ? 'rotate-180' : ''}`} />
+            </span>
+          </button>
+
+          {showCloudConfig && (
+            <div className="mt-3 p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                    <span>Supabase Project URL</span>
+                    <span className="text-[10px] text-slate-400">Project Endpoint</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="https://xyzproject.supabase.co"
+                    value={supabaseUrl}
+                    onChange={(e) => setSupabaseUrl(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                    <span>Supabase Anon Public API Key</span>
+                    <span className="text-[10px] text-slate-400">Client-safe anon key</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="eyJhbGciOi..."
+                    value={supabaseAnonKey}
+                    onChange={(e) => setSupabaseAnonKey(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={handleResetToDefaultCloud}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset to Official Mohit Kirana Cloud Default</span>
+                </button>
+
+                <p className="text-[10px] text-slate-400">
+                  Default credentials are tied to your Mohit Kirana database.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
