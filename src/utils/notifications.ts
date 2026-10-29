@@ -16,7 +16,17 @@ export function buildReceiptMessage(invoice: Invoice, settings: StoreSettings): 
 
   let balanceText = 'Balance: ₹0';
   if (invoice.udharAmount > 0) {
-    balanceText = `Outstanding Udhar: ${formatINR(invoice.udharAmount)}`;
+    const prevUdhar = invoice.previousUdhar || 0;
+    const currentUdhar = invoice.udharAmount || 0;
+    const totalUdhar = invoice.totalOutstandingUdhar !== undefined
+      ? invoice.totalOutstandingUdhar
+      : prevUdhar + currentUdhar;
+
+    if (prevUdhar > 0 && currentUdhar > 0) {
+      balanceText = `Previous Udhar (पिछला बकाया): ${formatINR(prevUdhar)}\nThis Bill Udhar (इस बिल का उधार): +${formatINR(currentUdhar)}\nTotal Udhar Due (कुल बकाया उधार): ${formatINR(totalUdhar)}`;
+    } else {
+      balanceText = `Total Udhar Due (कुल बकाया उधार): ${formatINR(totalUdhar)}`;
+    }
   }
 
   let discountText = '';
@@ -73,4 +83,41 @@ export function getSmsClickUrl(phone: string, text: string): string {
     return `sms:${cleanPhone}${separator}body=${encodedText}`;
   }
   return `sms:${separator}body=${encodedText}`;
+}
+
+
+export interface UdharRepaymentReceiptInfo {
+  customerName: string;
+  phone: string;
+  amountPaid: number;
+  remainingBalance: number;
+  paymentMethod?: string;
+  date?: string;
+  notes?: string;
+}
+
+export function buildUdharRepaymentMessage(
+  info: UdharRepaymentReceiptInfo,
+  settings: StoreSettings
+): string {
+  const isCleared = info.remainingBalance <= 0;
+  const balanceNotice = isCleared
+    ? '🎉 Badhaai ho! Aapka puraana sabhi udhaar chukta ho gaya hai (Current Due: ₹0). Dhanyawad!'
+    : `Bacha Hua Udhaar (Remaining Balance): ${formatINR(info.remainingBalance)}`;
+
+  const modeText = info.paymentMethod ? info.paymentMethod.toUpperCase() : 'CASH';
+
+  return `Namaste ${info.customerName} ji!
+Aapka udhaar bhugtan (Payment) safaltapoorvak prapt hua.
+
+Dukan: ${settings.shopName}
+Jama Rashi (Paid Amount): ${formatINR(info.amountPaid)}
+Payment Mode: ${modeText}
+Date: ${formatDate(info.date || new Date().toISOString())}
+${info.notes ? `Remarks: ${info.notes}\n` : ''}----------------------------------------
+${balanceNotice}
+----------------------------------------
+
+${settings.receiptFooter || 'Dhanyawad! Please visit again.'}
+${settings.phone ? `Sampark: ${settings.phone}` : ''}`;
 }

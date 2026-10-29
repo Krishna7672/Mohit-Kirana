@@ -12,6 +12,7 @@ import {
   getSupabaseConfig,
   saveSupabaseConfig,
   testSupabaseConnection,
+  syncBidirectional,
   syncLocalToSupabase,
   restoreFromSupabase,
   isOnline
@@ -215,7 +216,7 @@ export const SettingsView: React.FC<Props> = ({ settings, onSettingsUpdated }) =
       email: finalEmail,
       autoSync: supabaseAutoSync,
     });
-    const res = await syncLocalToSupabase();
+    const res = await syncBidirectional();
     setSupabaseStatusMessage(res.message);
     if (res.success) {
       setLastCloudSync(new Date().toISOString());
@@ -758,7 +759,7 @@ Developer       : This app made by Nahata Software's
             className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl shadow-sm transition-all active:scale-98 disabled:opacity-50"
           >
             <CloudUpload className="w-3.5 h-3.5" />
-            <span>{isSupabaseSyncing ? 'Syncing...' : 'Sync to Cloud Now'}</span>
+            <span>{isSupabaseSyncing ? 'Syncing...' : 'Two-Way Cloud Sync (दोतरफा सिंक)'}</span>
           </button>
 
           <button

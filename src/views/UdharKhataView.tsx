@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
+import { triggerBackgroundCloudSync } from '../db/supabaseSync';
 import type { Customer, UdharEntry, StoreSettings } from '../types';
 import { formatINR, formatDate, formatDateTime } from '../utils/formatters';
-import { buildUdharReminderMessage, getWhatsAppClickUrl, getSmsClickUrl } from '../utils/notifications';
+import { buildUdharReminderMessage, getWhatsAppClickUrl, getSmsClickUrl, type UdharRepaymentReceiptInfo } from '../utils/notifications';
 import { UpdatePreviousUdharModal } from '../components/UpdatePreviousUdharModal';
+import { RepaymentReceiptModal } from '../components/RepaymentReceiptModal';
 import {
   BookOpen,
   CreditCard,
@@ -18,7 +20,8 @@ import {
   X,
   CheckCircle,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  Share2
 } from 'lucide-react';
 
 interface Props {
@@ -42,6 +45,10 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
   const [repayAmount, setRepayAmount] = useState('');
   const [repayMethod, setRepayMethod] = useState<'cash' | 'upi'>('cash');
   const [repayNotes, setRepayNotes] = useState('');
+
+  // Repayment Receipt Share Modal
+  const [repaymentReceiptInfo, setRepaymentReceiptInfo] = useState<UdharRepaymentReceiptInfo | null>(null);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
 
   // Total outstanding udhar
   const totalUdhar = useMemo(() => {
@@ -108,11 +115,24 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
       });
     });
 
+    const paymentReceipt: UdharRepaymentReceiptInfo = {
+      customerName: repayingCustomer.name,
+      phone: repayingCustomer.phone,
+      amountPaid: amt,
+      remainingBalance: newBal,
+      paymentMethod: repayMethod,
+      date: now,
+      notes: repayNotes.trim(),
+    };
+
     setIsRepayModalOpen(false);
     setRepayAmount('');
     setRepayNotes('');
     setRepayingCustomer(null);
-    alert(`Payment of ${formatINR(amt)} recorded successfully!`);
+    triggerBackgroundCloudSync();
+
+    setRepaymentReceiptInfo(paymentReceipt);
+    setIsReceiptModalOpen(true);
   };
 
   const handlePrintStatement = () => {
@@ -321,9 +341,32 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
                                     Credit Sale
                                   </span>
                                 ) : (
-                                  <span className="inline-block px-1.5 py-0.5 rounded font-bold text-[9px] uppercase bg-emerald-100 text-emerald-800">
-                                    Repayment
-                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="inline-block px-1.5 py-0.5 rounded font-bold text-[9px] uppercase bg-emerald-100 text-emerald-800">
+                                      Repayment
+                                    </span>
+                                    {activeCustomer && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setRepaymentReceiptInfo({
+                                            customerName: activeCustomer.name,
+                                            phone: activeCustomer.phone,
+                                            amountPaid: entry.amount,
+                                            remainingBalance: entry.balanceAfter,
+                                            paymentMethod: entry.paymentMethod || 'cash',
+                                            date: entry.date,
+                                            notes: entry.notes,
+                                          });
+                                          setIsReceiptModalOpen(true);
+                                        }}
+                                        className="p-0.5 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 rounded transition-colors"
+                                        title="Share receipt via WhatsApp / SMS"
+                                      >
+                                        <Share2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                               <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
@@ -526,6 +569,17 @@ export const UdharKhataView: React.FC<Props> = ({ settings }) => {
         onSuccess={(updated) => {
           setSelectedCustomerId(updated.id!);
         }}
+      />
+
+      {/* Repayment Receipt Share Modal (WhatsApp & SMS) */}
+      <RepaymentReceiptModal
+        isOpen={isReceiptModalOpen}
+        onClose={() => {
+          setIsReceiptModalOpen(false);
+          setRepaymentReceiptInfo(null);
+        }}
+        receiptInfo={repaymentReceiptInfo}
+        settings={settings}
       />
     </div>
   );

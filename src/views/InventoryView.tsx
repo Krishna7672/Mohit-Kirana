@@ -450,6 +450,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
 
     setSelectedCatalogItems(new Set());
     setIsCatalogModalOpen(false);
+    triggerBackgroundCloudSync();
     alert(`Successfully added ${addedCount} products to your store inventory!`);
   };
 
@@ -542,6 +543,7 @@ export const InventoryView: React.FC<Props> = ({ settings, openNewProductModalOn
       if (importedProducts.length > 0) {
         try {
           await db.products.bulkAdd(importedProducts as Product[]);
+          triggerBackgroundCloudSync();
           alert(`Successfully imported ${importedProducts.length} products!`);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Error importing CSV';

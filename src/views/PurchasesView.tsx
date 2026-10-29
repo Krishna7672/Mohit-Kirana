@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
+import { triggerBackgroundCloudSync } from '../db/supabaseSync';
 import type { Supplier, Purchase, PurchaseItem, Product, StoreSettings } from '../types';
 import { formatINR, formatDate, formatDateTime } from '../utils/formatters';
 import {
@@ -172,6 +173,7 @@ export const PurchasesView: React.FC<Props> = () => {
     setInwardItems([]);
     setPaidAmount('');
     setInwardNotes('');
+    triggerBackgroundCloudSync();
     alert(`Stock inward successfully recorded! Stock quantities have been updated.`);
   };
 
@@ -199,6 +201,7 @@ export const PurchasesView: React.FC<Props> = () => {
     setSupPhone('');
     setSupAddress('');
     setSupGstin('');
+    triggerBackgroundCloudSync();
   };
 
   return (

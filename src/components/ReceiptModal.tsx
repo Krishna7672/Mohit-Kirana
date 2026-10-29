@@ -227,8 +227,28 @@ export const ReceiptModal: React.FC<Props> = ({
                   </div>
                   {invoice.udharAmount > 0 && (
                     <div className="flex justify-between text-red-600 font-bold bg-red-50 p-1 rounded">
-                      <span>Outstanding Udhar:</span>
-                      <span>{formatINR(invoice.udharAmount)}</span>
+                      <span>This Bill Udhar (इस बिल का):</span>
+                      <span>+{formatINR(invoice.udharAmount)}</span>
+                    </div>
+                  )}
+                  {(invoice.udharAmount > 0 || (invoice.previousUdhar !== undefined && invoice.previousUdhar > 0)) && (
+                    <div className="border-t-2 border-red-200 pt-2 mt-1 space-y-1 bg-red-50/80 p-2 rounded-lg text-xs">
+                      {(invoice.previousUdhar !== undefined ? invoice.previousUdhar : 0) > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>Previous Udhar (पिछला उधार):</span>
+                          <span>{formatINR(invoice.previousUdhar || 0)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-red-900 font-black border-t border-red-300 pt-0.5 text-[11px]">
+                        <span>Total Due (कुल बकाया उधार):</span>
+                        <span>
+                          {formatINR(
+                            invoice.totalOutstandingUdhar !== undefined
+                              ? invoice.totalOutstandingUdhar
+                              : (invoice.previousUdhar || 0) + invoice.udharAmount
+                          )}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -345,8 +365,28 @@ export const ReceiptModal: React.FC<Props> = ({
                     </div>
                     {invoice.udharAmount > 0 && (
                       <div className="flex justify-between text-red-600 font-bold bg-red-50 p-1.5 rounded">
-                        <span>Udhar (Balance):</span>
-                        <span>{formatINR(invoice.udharAmount)}</span>
+                        <span>This Bill Udhar (इस बिल का उधार):</span>
+                        <span>+{formatINR(invoice.udharAmount)}</span>
+                    </div>
+                  )}
+                  {(invoice.udharAmount > 0 || (invoice.previousUdhar !== undefined && invoice.previousUdhar > 0)) && (
+                    <div className="border-t-2 border-red-200 pt-2 mt-1 space-y-1 bg-red-50/80 p-2 rounded-lg text-xs">
+                      {(invoice.previousUdhar !== undefined ? invoice.previousUdhar : 0) > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>Previous Udhar (पिछला उधार):</span>
+                          <span>{formatINR(invoice.previousUdhar || 0)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-red-900 font-black border-t border-red-300 pt-0.5 text-[11px]">
+                        <span>Total Due (कुल बकाया उधार):</span>
+                        <span>
+                          {formatINR(
+                            invoice.totalOutstandingUdhar !== undefined
+                              ? invoice.totalOutstandingUdhar
+                              : (invoice.previousUdhar || 0) + invoice.udharAmount
+                          )}
+                        </span>
+                      </div>
                       </div>
                     )}
                   </div>

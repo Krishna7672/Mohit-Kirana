@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, DEFAULT_SETTINGS, initializeDatabase, autoScanAndSyncData } from './db';
-import { setupAutoOnlineSync, syncLocalToSupabase, restoreFromSupabase } from './db/supabaseSync';
+import { setupAutoOnlineSync, syncLocalToSupabase, restoreFromSupabase, syncBidirectional } from './db/supabaseSync';
 import type { Invoice, StoreSettings } from './types';
 import { Navigation, type ActiveTab } from './components/Navigation';
 import { DashboardView } from './views/DashboardView';
@@ -57,23 +57,22 @@ export function App() {
   useEffect(() => {
     initializeDatabase()
       .then(async () => {
-        const pCount = await db.products.count();
-        if (pCount === 0 && typeof navigator !== 'undefined' && navigator.onLine) {
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
           try {
-            const res = await restoreFromSupabase();
-            if (res.success && res.restoredCounts?.products) {
-              setSyncStatus(`Auto-recovered ${res.restoredCounts.products} items from Supabase Cloud!`);
-              setTimeout(() => setSyncStatus(null), 4000);
+            const res = await syncBidirectional();
+            if (res.success && res.syncedCounts) {
+              setSyncStatus(`Cloud sync: ${res.syncedCounts.products} items & ${res.syncedCounts.customers} parties synced!`);
+              setTimeout(() => setSyncStatus(null), 3500);
             }
           } catch (e) {
-            console.warn('Auto cloud restore check failed:', e);
+            console.warn('Initial cloud sync warning:', e);
           }
         }
         return handleTriggerSync();
       })
       .catch(console.error);
 
-    // Setup automatic background sync to Supabase when device is online
+    // Setup automatic background sync & realtime listeners to Supabase
     setupAutoOnlineSync((status) => {
       if (status.message) {
         setSyncStatus(status.message);
@@ -81,16 +80,12 @@ export function App() {
       }
     });
 
-    if (navigator.onLine) {
-      syncLocalToSupabase().catch(() => {});
-    }
-
-    // Periodic 3-minute heartbeat cloud sync when active
+    // Periodic 30-second heartbeat cloud sync when online
     const syncInterval = setInterval(() => {
-      if (navigator.onLine) {
-        syncLocalToSupabase().catch(() => {});
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        syncBidirectional().catch(() => {});
       }
-    }, 3 * 60 * 1000);
+    }, 30 * 1000);
 
     // Listen for beforeinstallprompt for PWA
     const handleBeforeInstall = (e: Event) => {

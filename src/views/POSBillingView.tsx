@@ -363,6 +363,7 @@ export const POSBillingView: React.FC<Props> = ({
       setNewCustPhone('');
       setNewCustAddress('');
       setNewCustPreviousUdhar('');
+      triggerBackgroundCloudSync();
       setNotification({
         type: 'success',
         message: `Registered new customer: ${created.name}${prevAmt > 0 ? ` with previous udhar ${formatINR(prevAmt)}` : ''}`,
@@ -461,6 +462,14 @@ export const POSBillingView: React.FC<Props> = ({
           ? `${walkInName.trim()} (Walk-in)`
           : 'Walk-in Customer';
 
+        let prevUdhar = 0;
+        let freshCust: Customer | undefined;
+        if (selectedCustomer?.id) {
+          freshCust = await db.customers.get(selectedCustomer.id);
+          prevUdhar = freshCust ? (freshCust.outstandingUdhar || 0) : (selectedCustomer.outstandingUdhar || 0);
+        }
+        const totalOutstandingUdhar = prevUdhar + udharAmount;
+
         const invoiceData: Omit<Invoice, 'id'> = {
           invoiceNumber,
           date: now,
@@ -489,6 +498,8 @@ export const POSBillingView: React.FC<Props> = ({
           paymentMethod,
           paidAmount,
           udharAmount,
+          previousUdhar: prevUdhar,
+          totalOutstandingUdhar,
           status: 'completed',
           notes: notes.trim(),
           createdAt: now,
@@ -1289,8 +1300,18 @@ export const POSBillingView: React.FC<Props> = ({
                     />
                   </div>
                   <div className="flex justify-between text-red-600 font-bold">
-                    <span>Balance Added to Udhar Khata:</span>
-                    <span>{formatINR(udharAmount)}</span>
+                    <span>This Bill Udhar (+ इस बिल का):</span>
+                    <span>+{formatINR(udharAmount)}</span>
+                  </div>
+                  {(selectedCustomer?.outstandingUdhar || 0) > 0 && (
+                    <div className="flex justify-between text-[11px] text-slate-600 dark:text-slate-400">
+                      <span>Previous Udhar (पिछला बकाया):</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{formatINR(selectedCustomer?.outstandingUdhar || 0)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs font-black text-red-700 dark:text-red-300 pt-1 border-t border-dashed border-red-300">
+                    <span>Total Net Udhar (कुल नया बकाया):</span>
+                    <span>{formatINR((selectedCustomer?.outstandingUdhar || 0) + udharAmount)}</span>
                   </div>
                 </div>
               )}
@@ -1299,7 +1320,23 @@ export const POSBillingView: React.FC<Props> = ({
               {paymentMethod === 'udhar' && (
                 <div className="bg-red-50 dark:bg-red-950/40 p-2.5 rounded-xl border border-red-200 dark:border-red-800 text-xs text-red-800 dark:text-red-300 flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>Entire bill of {formatINR(grandTotal)} will be added to {selectedCustomer?.name || 'customer'}&apos;s credit ledger.</span>
+                  <div className="flex-1 space-y-1">
+                    <div className="font-bold text-red-900 dark:text-red-200">
+                      Credit Sale: {selectedCustomer?.name || 'Customer'}
+                    </div>
+                    <div className="flex justify-between text-[11px] text-slate-600 dark:text-slate-400">
+                      <span>Previous Udhar (पिछला बकाया):</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{formatINR(selectedCustomer?.outstandingUdhar || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-red-700 dark:text-red-400 font-bold">
+                      <span>This Bill Udhar (+ नया उधार):</span>
+                      <span>+{formatINR(grandTotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-black text-red-950 dark:text-red-100 pt-1 border-t border-dashed border-red-300 dark:border-red-700">
+                      <span>Total Net Udhar (कुल नया बकाया):</span>
+                      <span>{formatINR((selectedCustomer?.outstandingUdhar || 0) + grandTotal)}</span>
+                    </div>
+                  </div>
                 </div>
               )}
 

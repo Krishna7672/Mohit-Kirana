@@ -13,9 +13,11 @@ import { exportCustomersCSV } from '../utils/csv';
 import {
   buildUdharReminderMessage,
   getWhatsAppClickUrl,
-  getSmsClickUrl
+  getSmsClickUrl,
+  type UdharRepaymentReceiptInfo
 } from '../utils/notifications';
 import { UpdatePreviousUdharModal } from '../components/UpdatePreviousUdharModal';
+import { RepaymentReceiptModal } from '../components/RepaymentReceiptModal';
 import {
   Users,
   UserPlus,
@@ -62,6 +64,8 @@ export const CustomerManagementView: React.FC<Props> = ({
   const [repaymentAmount, setRepaymentAmount] = useState('');
   const [repaymentMethod, setRepaymentMethod] = useState<'cash' | 'upi'>('cash');
   const [repaymentNotes, setRepaymentNotes] = useState('');
+  const [repaymentReceiptInfo, setRepaymentReceiptInfo] = useState<UdharRepaymentReceiptInfo | null>(null);
+  const [isRepayReceiptModalOpen, setIsRepayReceiptModalOpen] = useState(false);
 
   // Form State for Add/Edit
   const [formName, setFormName] = useState('');
@@ -287,11 +291,23 @@ export const CustomerManagementView: React.FC<Props> = ({
     const freshCust = await db.customers.get(selectedProfileCustomer.id);
     setSelectedProfileCustomer(freshCust || null);
 
+    const paymentReceipt: UdharRepaymentReceiptInfo = {
+      customerName: selectedProfileCustomer.name,
+      phone: selectedProfileCustomer.phone,
+      amountPaid: amount,
+      remainingBalance: newBalance,
+      paymentMethod: repaymentMethod,
+      date: now,
+      notes: repaymentNotes.trim(),
+    };
+
     setIsRepaymentModalOpen(false);
     setRepaymentAmount('');
     setRepaymentNotes('');
     triggerBackgroundCloudSync();
-    alert(`Successfully recorded repayment of ${formatINR(amount)}. Remaining Udhar: ${formatINR(newBalance)}.`);
+
+    setRepaymentReceiptInfo(paymentReceipt);
+    setIsRepayReceiptModalOpen(true);
   };
 
   const handleSendReminderWhatsApp = (c: Customer) => {
@@ -907,6 +923,17 @@ export const CustomerManagementView: React.FC<Props> = ({
             setSelectedProfileCustomer(updated);
           }
         }}
+      />
+
+      {/* Repayment Receipt Share Modal (WhatsApp & SMS) */}
+      <RepaymentReceiptModal
+        isOpen={isRepayReceiptModalOpen}
+        onClose={() => {
+          setIsRepayReceiptModalOpen(false);
+          setRepaymentReceiptInfo(null);
+        }}
+        receiptInfo={repaymentReceiptInfo}
+        settings={settings}
       />
     </div>
   );

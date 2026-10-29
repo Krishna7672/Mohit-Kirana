@@ -124,3 +124,40 @@ CREATE POLICY "Public access suppliers" ON suppliers FOR ALL USING (true) WITH C
 
 DROP POLICY IF EXISTS "Public access purchases" ON purchases;
 CREATE POLICY "Public access purchases" ON purchases FOR ALL USING (true) WITH CHECK (true);
+
+-- Enable Supabase Realtime for Multi-Device Live Sync
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE store_settings;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE products;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE customers;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE invoices;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE udhar_ledger;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE stock_movements;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE suppliers;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE purchases;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;

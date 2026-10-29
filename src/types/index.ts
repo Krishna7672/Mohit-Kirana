@@ -67,6 +67,8 @@ export interface Invoice {
   paymentMethod: PaymentMethod;
   paidAmount: number;
   udharAmount: number;
+  previousUdhar?: number;
+  totalOutstandingUdhar?: number;
   status: 'completed' | 'refunded' | 'cancelled';
   notes?: string;
   posTerminalName?: string;

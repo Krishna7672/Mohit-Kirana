@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
+import { triggerBackgroundCloudSync } from '../db/supabaseSync';
 import type { Invoice, StoreSettings } from '../types';
 import { formatINR, formatDate, formatDateTime } from '../utils/formatters';
 import { exportInvoicesCSV } from '../utils/csv';
@@ -226,6 +227,7 @@ export const ReportsView: React.FC<Props> = ({ settings, onOpenReceipt }) => {
       alert(`Bill #${refundingInvoice.invoiceNumber} refunded successfully. Stock has been restored.`);
       setRefundingInvoice(null);
       setRefundReason('');
+      triggerBackgroundCloudSync();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error executing refund';
       alert(`Refund failed: ${msg}`);

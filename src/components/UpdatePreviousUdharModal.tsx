@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../db';
+import { triggerBackgroundCloudSync } from '../db/supabaseSync';
 import type { Customer } from '../types';
 import { formatINR } from '../utils/formatters';
 import {
@@ -133,6 +134,7 @@ export const UpdatePreviousUdharModal: React.FC<Props> = ({
       if (savedCustomer && onSuccess) {
         onSuccess(savedCustomer);
       }
+      triggerBackgroundCloudSync();
       onClose();
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to update udhar.');
